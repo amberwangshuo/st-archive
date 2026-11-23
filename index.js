@@ -173,6 +173,10 @@
             sides.append(el);
         }
         sheld.append(sides);
+        // 活页夹的银环：上下各三只，样子在主题里
+        const rings = doc.createElement('div');
+        rings.id = 'ar-rings';
+        sheld.append(rings);
         fill();
         applyStyle();
     }
@@ -229,6 +233,7 @@
         doc.getElementById('ar-tabs')?.remove();
         doc.getElementById('ar-cover')?.remove();
         doc.getElementById('ar-sides')?.remove();
+        doc.getElementById('ar-rings')?.remove();
         doc.getElementById('ar-fonts')?.remove();
         doc.getElementById('ar-style')?.remove();
         clearStyle();
@@ -363,8 +368,9 @@
     // 每条消息的排版：名字、body 上的 class
     const LAYOUTS = [
         ['分隔签', ''],
-        ['证件照', 'ar-lay-id'],
-        ['居中', 'ar-lay-center'],
+        ['档案表', 'ar-lay-form'],
+        ['明信片', 'ar-lay-post'],
+        ['肖像卡', 'ar-lay-card'],
     ];
     const IMAGES = [
         ['--ar-shadow', 'desk', '底图（台面）', 1600],
