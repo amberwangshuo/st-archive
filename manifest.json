@@ -1,0 +1,10 @@
+{
+    "display_name": "档案 archive",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "author": "王北方",
+    "version": "0.1.0",
+    "homePageUrl": ""
+}
