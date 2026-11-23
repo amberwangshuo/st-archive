@@ -225,6 +225,8 @@
         if (themeOn()) {
             mount();
             body.classList.add('ar-tab');
+            // 一进来就有面板开着（比如被钉住的世界书），图标要露出来，才点得到它把它关掉
+            if (doc.querySelector('#top-settings-holder .drawer-content.openDrawer')) open(true);
             buildCover();
             gatherTools();
         } else if (body.classList.contains('ar-tab')) {
