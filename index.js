@@ -1,7 +1,7 @@
 // 档案 archive 的配套插件（试作）
 // 只在「档案」主题生效时工作：
 // · 隔页上凸出三枚签：archive（点它露出顶栏图标）、records（聊天记录）、index（角色）
-// · 输入栏平时收在磨砂袋里，点袋子就抽出来（抽出、收回的动画在主题里）
+// · 输入栏是一张别在纸下沿的卡片；别的插件的按钮、快速回复收进卡片第二行，点卡片才展开
 // · 欢迎页先是封面（磨砂档案袋里抽出最近那位的名字卡和相纸），records 签翻到最近聊天
 // 没装这个插件时，主题照样能用：图标一直显示，只有一枚签，输入栏点中间也能抽出来。
 
@@ -125,6 +125,10 @@
                 name = c.name2 ?? c.characters[c.characterId].name ?? '';
             }
             count = Array.isArray(c.chat) ? c.chat.length : 0;
+            // 书眉第一张小方图：当前角色的头像（群聊就不放，用默认那张）
+            const ch = !c.groupId && c.characterId != null ? c.characters?.[c.characterId] : null;
+            if (ch?.avatar) doc.documentElement.style.setProperty('--ar-ava', `url("/thumbnail?type=avatar&file=${encodeURIComponent(ch.avatar)}")`);
+            else doc.documentElement.style.removeProperty('--ar-ava');
         }
         if (tabs) {
             const no = count ? String(count).padStart(4, '0') : '';
@@ -182,7 +186,6 @@
                 if (!keep(el)) ti.append(el);
             }
         }
-        measure();
     }
 
     function releaseTools() {
@@ -196,15 +199,6 @@
         tools.remove();
     }
 
-    // 卡片抽出来要露出多少：第一行 + 工具格（不算下面那截横线格），再加袋口上沿的 14px
-    function measure() {
-        const card = doc.getElementById('nonQRFormItems');
-        if (!card) return;
-        const pad = parseFloat(getComputedStyle(card).paddingBottom) || 0;
-        const h = card.offsetHeight - pad;
-        if (h > 0) doc.documentElement.style.setProperty('--ar-pull', `${Math.round(h + 14)}px`);
-    }
-
     // 滚动时浮出滚动条，停下一会儿再藏
     let scrollTimer = 0;
     doc.addEventListener('scroll', (e) => {
@@ -216,7 +210,7 @@
 
     function unmount() {
         releaseTools();
-        doc.documentElement.style.removeProperty('--ar-pull');
+        doc.documentElement.style.removeProperty('--ar-ava');
         doc.getElementById('ar-tabs')?.remove();
         doc.getElementById('ar-cover')?.remove();
         doc.getElementById('ar-side')?.remove();
@@ -259,13 +253,12 @@
         open(false);
     }, true);
 
-    // 输入栏：点袋子或开始打字时抽出来（body.ar-memo）；框里没字、点到别处时沉回去
-    // 卡片抽出来时纸的下边会多留一截（主题里），原来停在最底下的话就跟着滚到底
+    // 输入卡片：点它或开始打字时展开工具格（body.ar-memo）；框里没字、点到别处时收起
+    // 工具格展开时纸的下边会多留一截（主题里），原来停在最底下的话就跟着滚到底
     const memo = (on) => {
         if (body.classList.contains('ar-memo') === on) return;
         const chat = doc.getElementById('chat');
         const atBottom = chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
-        if (on) measure();
         body.classList.toggle('ar-memo', on);
         if (atBottom) requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
     };
@@ -275,21 +268,13 @@
         if (!body.classList.contains('ar-tab')) return;
         const form = e.target.closest('#send_form');
         if (form) {
-            const wasOpen = body.classList.contains('ar-memo');
             memo(true);
-            // 收着的时候点到哪儿都只是把它抽出来，光标放进输入框
-            if (!wasOpen && !e.target.closest('#send_textarea')) {
-                e.preventDefault();
-                setTimeout(() => textarea()?.focus(), 0);
-            }
             return;
         }
-        // 点到别处：框里没字就收回去（弹出的菜单里点不算）
+        // 点到别处：框里没字就把工具格收回去（弹出的菜单里点不算）
         if (e.target.closest('#options, #extensionsMenu, .list-group, .popup')) return;
         if (empty()) memo(false);
     }, true);
-    // 字多了输入框变高，抽出的距离跟着变
-    doc.addEventListener('input', (e) => { if (e.target === textarea()) requestAnimationFrame(measure); }, true);
     doc.addEventListener('keydown', (e) => {
         if (e.target === textarea() && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') memo(true);
     }, true);
@@ -304,18 +289,26 @@
         }).observe(holder, { subtree: true, attributes: true, attributeFilter: ['class'] });
     }
 
-    // ── 欢迎页那叠档案：手机上第一次点只把那份抽出来，再点才打开（电脑上鼠标移上去就算抽出来了） ──
+    // ── 欢迎页那叠档案、角色抽屉里的文件夹：手机上第一次点只把那份提起来，再点才打开
+    //    （电脑上鼠标移上去就算提起来了） ──
     let passClick = false;
+    const PILES = [
+        ['#chat .welcomePanel .recentChat', '.chatActions'],
+        ['#rm_print_characters_block .character_select, #rm_print_characters_block .group_select', '.ch_fav_icon'],
+    ];
     doc.addEventListener('click', (e) => {
         if (passClick || !body.classList.contains('ar-tab')) return;
-        const rc = e.target.closest?.('#chat .welcomePanel .recentChat');
-        if (!rc || e.target.closest('.chatActions')) return;
         if (matchMedia('(hover: hover)').matches) return;
-        if (rc.classList.contains('ar-pulled')) return;
-        e.stopPropagation();
-        e.preventDefault();
-        doc.querySelectorAll('#chat .recentChat.ar-pulled').forEach((x) => x.classList.remove('ar-pulled'));
-        rc.classList.add('ar-pulled');
+        for (const [sel, skip] of PILES) {
+            const it = e.target.closest?.(sel);
+            if (!it || e.target.closest(skip)) continue;
+            if (it.classList.contains('ar-pulled')) return;
+            e.stopPropagation();
+            e.preventDefault();
+            doc.querySelectorAll('.ar-pulled').forEach((x) => x.classList.remove('ar-pulled'));
+            it.classList.add('ar-pulled');
+            return;
+        }
     }, true);
 
     // ── 调色 / 换图 / 换字体：隔页右边凸出的一枚竖签，点开是一张样张卡 ──
@@ -343,7 +336,9 @@
     ];
     const IMAGES = [
         ['--ar-shadow', 'desk', '台面的光影', 1400],
-        ['--ar-photo', 'photo', '袋中的照片', 700],
+        ['--ar-photo', 'photo', '夹在隔页后的照片', 700],
+        ['--ar-sq1', 'sq1', '书眉小方图 二', 240],
+        ['--ar-sq2', 'sq2', '书眉小方图 三', 240],
     ];
 
     const store = () => {
@@ -510,7 +505,7 @@
         for (const k of ['CHAT_CHANGED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_DELETED', 'CHARACTER_EDITED']) {
             if (et[k]) es.on(et[k], () => { sync(); fill(); });
         }
-        // 发出去之后输入栏先沉回袋子（生成回复时会再浮上来露出 STOP）；换聊天也收回去
+        // 发出去之后、换聊天时把工具格收起来
         for (const k of ['MESSAGE_SENT', 'CHAT_CHANGED']) {
             if (et[k]) es.on(et[k], () => { if (empty()) memo(false); });
         }
