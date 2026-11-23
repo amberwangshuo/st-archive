@@ -11,8 +11,8 @@
     let tabs = null;
     let hadDrawerOpen = false;
 
-    // 主题有没有生效：看主题定义的变量在不在
-    const themeOn = () => getComputedStyle(doc.documentElement).getPropertyValue('--ar-paper').trim() !== '';
+    // 主题有没有生效：看主题定义的变量在不在（不能看 --ar-paper：调色时插件自己会在 <html> 上写它）
+    const themeOn = () => getComputedStyle(doc.documentElement).getPropertyValue('--ar-clip').trim() !== '';
 
     const ctx = () => {
         try { return globalThis.SillyTavern?.getContext?.() ?? null; } catch { return null; }
@@ -87,7 +87,7 @@
             </div>
             <div class="ar-cv-front" role="button"><b>archive</b></div>`;
         // 点名字卡或相纸：打开这段聊天；点袋子：翻到插袋格
-        const openIt = () => latest()?.click();
+        const openIt = () => { passClick = true; latest()?.click(); passClick = false; };
         el.querySelector('.ar-cv-card').addEventListener('click', openIt);
         el.querySelector('.ar-cv-photo').addEventListener('click', openIt);
         el.querySelector('.ar-cv-front').addEventListener('click', () => setView('records'));
@@ -146,14 +146,84 @@
             tabs.append(el);
         }
         sheld.prepend(tabs);
+        // 隔页右边的竖签：样张卡（调色、换图、换字体）
+        const side = doc.createElement('div');
+        side.id = 'ar-side';
+        side.setAttribute('role', 'button');
+        side.title = '调色、换图、换字体';
+        side.innerHTML = '<b>style</b>';
+        side.addEventListener('click', () => stylePanel(!body.classList.contains('ar-styling')));
+        sheld.append(side);
         fill();
+        applyStyle();
     }
 
+    // ── 工具格：别的插件塞进输入栏的按钮、快速回复，搬进 MEMO 卡的第二行 ──
+    // 只留在原处的：+、✳、发送、停止、脚本的三个键
+    const KEEP = new Set(['options_button', 'extensionsMenuButton', 'send_but', 'mes_stop']);
+    const keep = (el) => KEEP.has(el.id) || el.classList.contains('stscript_btn');
+
+    function gatherTools() {
+        const card = doc.getElementById('nonQRFormItems');
+        if (!card) return;
+        let tools = doc.getElementById('ar-tools');
+        if (!tools) {
+            tools = doc.createElement('div');
+            tools.id = 'ar-tools';
+            tools.innerHTML = '<div class="ar-tq"></div><div class="ar-ti"></div>';
+            card.append(tools);
+        }
+        const tq = tools.querySelector('.ar-tq');
+        const ti = tools.querySelector('.ar-ti');
+        const qr = doc.getElementById('qr--bar');
+        if (qr && qr.parentElement !== tq) tq.append(qr);
+        for (const id of ['leftSendForm', 'rightSendForm']) {
+            for (const el of [...(doc.getElementById(id)?.children ?? [])]) {
+                if (!keep(el)) ti.append(el);
+            }
+        }
+        measure();
+    }
+
+    function releaseTools() {
+        const tools = doc.getElementById('ar-tools');
+        if (!tools) return;
+        const form = doc.getElementById('send_form');
+        const right = doc.getElementById('rightSendForm');
+        const qr = doc.getElementById('qr--bar');
+        if (qr && form) form.prepend(qr);
+        for (const el of [...tools.querySelectorAll('.ar-ti > *')]) right?.insertBefore(el, doc.getElementById('send_but'));
+        tools.remove();
+    }
+
+    // 卡片抽出来要露出多少：第一行 + 工具格（不算下面那截横线格），再加袋口上沿的 14px
+    function measure() {
+        const card = doc.getElementById('nonQRFormItems');
+        if (!card) return;
+        const pad = parseFloat(getComputedStyle(card).paddingBottom) || 0;
+        const h = card.offsetHeight - pad;
+        if (h > 0) doc.documentElement.style.setProperty('--ar-pull', `${Math.round(h + 14)}px`);
+    }
+
+    // 滚动时浮出滚动条，停下一会儿再藏
+    let scrollTimer = 0;
+    doc.addEventListener('scroll', (e) => {
+        if (e.target?.id !== 'chat' || !body.classList.contains('ar-tab')) return;
+        body.classList.add('ar-scrolling');
+        clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(() => body.classList.remove('ar-scrolling'), 900);
+    }, true);
+
     function unmount() {
+        releaseTools();
+        doc.documentElement.style.removeProperty('--ar-pull');
         doc.getElementById('ar-tabs')?.remove();
         doc.getElementById('ar-cover')?.remove();
+        doc.getElementById('ar-side')?.remove();
+        doc.getElementById('ar-style')?.remove();
+        clearStyle();
         tabs = null;
-        body.classList.remove('ar-tab', 'ar-open', 'ar-memo', 'ar-home', 'ar-cover');
+        body.classList.remove('ar-tab', 'ar-open', 'ar-memo', 'ar-home', 'ar-cover', 'ar-styling');
     }
 
     // 主题可能随时被换掉，过一会儿看一次
@@ -162,6 +232,7 @@
             mount();
             body.classList.add('ar-tab');
             buildCover();
+            gatherTools();
         } else if (body.classList.contains('ar-tab')) {
             unmount();
         }
@@ -189,7 +260,15 @@
     }, true);
 
     // 输入栏：点袋子或开始打字时抽出来（body.ar-memo）；框里没字、点到别处时沉回去
-    const memo = (on) => body.classList.toggle('ar-memo', on);
+    // 卡片抽出来时纸的下边会多留一截（主题里），原来停在最底下的话就跟着滚到底
+    const memo = (on) => {
+        if (body.classList.contains('ar-memo') === on) return;
+        const chat = doc.getElementById('chat');
+        const atBottom = chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
+        if (on) measure();
+        body.classList.toggle('ar-memo', on);
+        if (atBottom) requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+    };
     const textarea = () => doc.getElementById('send_textarea');
     const empty = () => !(textarea()?.value ?? '').trim();
     doc.addEventListener('pointerdown', (e) => {
@@ -209,6 +288,8 @@
         if (e.target.closest('#options, #extensionsMenu, .list-group, .popup')) return;
         if (empty()) memo(false);
     }, true);
+    // 字多了输入框变高，抽出的距离跟着变
+    doc.addEventListener('input', (e) => { if (e.target === textarea()) requestAnimationFrame(measure); }, true);
     doc.addEventListener('keydown', (e) => {
         if (e.target === textarea() && !e.ctrlKey && !e.metaKey && e.key !== 'Tab') memo(true);
     }, true);
@@ -222,6 +303,205 @@
             hadDrawerOpen = any;
         }).observe(holder, { subtree: true, attributes: true, attributeFilter: ['class'] });
     }
+
+    // ── 欢迎页那叠档案：手机上第一次点只把那份抽出来，再点才打开（电脑上鼠标移上去就算抽出来了） ──
+    let passClick = false;
+    doc.addEventListener('click', (e) => {
+        if (passClick || !body.classList.contains('ar-tab')) return;
+        const rc = e.target.closest?.('#chat .welcomePanel .recentChat');
+        if (!rc || e.target.closest('.chatActions')) return;
+        if (matchMedia('(hover: hover)').matches) return;
+        if (rc.classList.contains('ar-pulled')) return;
+        e.stopPropagation();
+        e.preventDefault();
+        doc.querySelectorAll('#chat .recentChat.ar-pulled').forEach((x) => x.classList.remove('ar-pulled'));
+        rc.classList.add('ar-pulled');
+    }, true);
+
+    // ── 调色 / 换图 / 换字体：隔页右边凸出的一枚竖签，点开是一张样张卡 ──
+    const VARS = [
+        ['--ar-paper', '纸'], ['--ar-ink', '墨'], ['--ar-mute', '旁白'], ['--ar-accent', '隔页'],
+        ['--ar-accent-ink', '隔页上的字'], ['--ar-dotp', '波点纸'], ['--ar-dot', '波点'], ['--ar-desk', '台面'],
+    ];
+    const PRESETS = [
+        ['冷白灰蓝', ['#FAFAF9', '#1D1D1C', '#8f8d88', '#C6D3D7', '#3f4648', '#EEEEED', '#8a8b8c', '#E3E4E5']],
+        ['象牙枯玫瑰', ['#F4EFE6', '#2B2420', '#9C8F84', '#D8C3BD', '#4A3632', '#EAE2D6', '#A8998B', '#DCD5CA']],
+        ['浅灰纯黑', ['#E9EAEB', '#111214', '#7C7F84', '#1F2023', '#E6E7E8', '#D6D8DA', '#5E6166', '#C4C6C9']],
+        ['炭黑雾蓝', ['#222325', '#E4E3DF', '#8A8B8E', '#4C5A63', '#E8ECEE', '#2E3033', '#6A6D72', '#141516']],
+    ];
+    // 中文正文字体；css 为空表示用系统自带的
+    const CN_FONTS = [
+        ['思源黑体 细', '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif', ''],
+        ['思源宋体', '"Noto Serif SC", "Songti SC", "SimSun", serif', 'https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@300;400&display=swap'],
+        ['霞鹜文楷', '"LXGW WenKai", "Kaiti SC", "KaiTi", serif', 'https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css'],
+        ['系统字体', 'system-ui, "PingFang SC", "Microsoft YaHei", sans-serif', ''],
+    ];
+    const TW_FONTS = [
+        ['Courier Prime', '"Courier Prime", "Courier New", monospace', ''],
+        ['Special Elite', '"Special Elite", "Courier New", monospace', 'https://fonts.loli.net/css2?family=Special+Elite&display=swap'],
+        ['IBM Plex Mono', '"IBM Plex Mono", "Courier New", monospace', 'https://fonts.loli.net/css2?family=IBM+Plex+Mono:wght@300;400&display=swap'],
+    ];
+    const IMAGES = [
+        ['--ar-shadow', 'desk', '台面的光影', 1400],
+        ['--ar-photo', 'photo', '袋中的照片', 700],
+    ];
+
+    const store = () => {
+        const c = ctx();
+        if (!c?.extensionSettings) return null;
+        c.extensionSettings.archive ??= {};
+        return c.extensionSettings.archive;
+    };
+    const save = () => ctx()?.saveSettingsDebounced?.();
+
+    function loadCss(href, id) {
+        if (!href || doc.getElementById(id)) return;
+        const l = doc.createElement('link');
+        l.rel = 'stylesheet';
+        l.href = href;
+        l.id = id;
+        doc.head.append(l);
+    }
+
+    // 把存下来的设置写到 <html> 上（盖过主题里的默认值）
+    function applyStyle() {
+        const s = store();
+        const root = doc.documentElement.style;
+        if (!s) return;
+        for (const [v] of VARS) {
+            if (s.colors?.[v]) root.setProperty(v, s.colors[v]);
+            else root.removeProperty(v);
+        }
+        for (const [v, key] of IMAGES) {
+            if (s.images?.[key]) root.setProperty(v, `url("${s.images[key]}")`);
+            else root.removeProperty(v);
+        }
+        const cn = CN_FONTS[s.cn ?? 0];
+        const tw = TW_FONTS[s.tw ?? 0];
+        if (s.cn) { root.setProperty('--ar-cn', cn[1]); loadCss(cn[2], `ar-font-cn-${s.cn}`); } else root.removeProperty('--ar-cn');
+        if (s.tw) { root.setProperty('--ar-tw', tw[1]); loadCss(tw[2], `ar-font-tw-${s.tw}`); } else root.removeProperty('--ar-tw');
+    }
+
+    function clearStyle() {
+        const root = doc.documentElement.style;
+        for (const [v] of VARS) root.removeProperty(v);
+        for (const [v] of IMAGES) root.removeProperty(v);
+        root.removeProperty('--ar-cn');
+        root.removeProperty('--ar-tw');
+    }
+
+    // 上传的图先缩小再存，免得设置文件太大
+    function shrink(file, max) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                const k = Math.min(1, max / Math.max(img.width, img.height));
+                const cv = doc.createElement('canvas');
+                cv.width = Math.round(img.width * k);
+                cv.height = Math.round(img.height * k);
+                cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+                URL.revokeObjectURL(img.src);
+                resolve(cv.toDataURL('image/jpeg', 0.82));
+            };
+            img.onerror = reject;
+            img.src = URL.createObjectURL(file);
+        });
+    }
+
+    const current = (v) => getComputedStyle(doc.documentElement).getPropertyValue(v).trim();
+    const hex = (c) => {
+        // color input 只认 #rrggbb
+        const m = c.match(/^#([0-9a-f]{3})$/i);
+        if (m) return '#' + [...m[1]].map((x) => x + x).join('');
+        return /^#[0-9a-f]{6}$/i.test(c) ? c : '#000000';
+    };
+
+    function buildPanel() {
+        let p = doc.getElementById('ar-style');
+        if (p) return p;
+        const s = store() ?? {};
+        p = doc.createElement('div');
+        p.id = 'ar-style';
+        p.innerHTML = `
+            <header><b>style</b><small>SWATCH CARD</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <section><h4>配色</h4>
+                <div class="ar-presets">${PRESETS.map(([n, c], i) => `<button data-p="${i}" title="${n}"><span>${c.slice(0, 4).map((x) => `<i style="background:${x}"></i>`).join('')}</span><em>${n}</em></button>`).join('')}</div>
+                <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
+            </section>
+            <section><h4>图片</h4>
+                ${IMAGES.map(([, key, n]) => `<div class="ar-img" data-k="${key}"><span>${n}</span><label class="ar-btn">换一张<input type="file" accept="image/*" hidden></label><button class="ar-btn" data-reset="${key}">还原</button></div>`).join('')}
+            </section>
+            <section><h4>字体</h4>
+                <label class="ar-row"><span>正文</span><select data-f="cn">${CN_FONTS.map(([n], i) => `<option value="${i}">${n}</option>`).join('')}</select></label>
+                <label class="ar-row"><span>打字机字</span><select data-f="tw">${TW_FONTS.map(([n], i) => `<option value="${i}">${n}</option>`).join('')}</select></label>
+            </section>
+            <footer><button class="ar-btn" data-all>全部还原</button></footer>`;
+        doc.body.append(p);
+
+        const sync = () => {
+            for (const inp of p.querySelectorAll('input[type=color]')) inp.value = hex(current(inp.dataset.v));
+            for (const sel of p.querySelectorAll('select')) sel.value = String(store()?.[sel.dataset.f] ?? 0);
+        };
+        p.addEventListener('input', (e) => {
+            const v = e.target.dataset?.v;
+            if (!v) return;
+            const st = store();
+            if (!st) return;
+            st.colors ??= {};
+            st.colors[v] = e.target.value;
+            applyStyle();
+            save();
+        });
+        p.addEventListener('change', async (e) => {
+            const st = store();
+            if (!st) return;
+            if (e.target.dataset?.f) {
+                st[e.target.dataset.f] = Number(e.target.value);
+                applyStyle();
+                save();
+            }
+            if (e.target.type === 'file' && e.target.files?.[0]) {
+                const key = e.target.closest('.ar-img').dataset.k;
+                const max = IMAGES.find((x) => x[1] === key)[3];
+                st.images ??= {};
+                st.images[key] = await shrink(e.target.files[0], max);
+                e.target.value = '';
+                applyStyle();
+                save();
+            }
+        });
+        p.addEventListener('click', (e) => {
+            const st = store();
+            const b = e.target.closest('button, .ar-x');
+            if (!b || !st) return;
+            if (b.classList.contains('ar-x')) { stylePanel(false); return; }
+            if (b.dataset.p !== undefined) {
+                st.colors = Object.fromEntries(VARS.map(([v], i) => [v, PRESETS[b.dataset.p][1][i]]));
+            } else if (b.dataset.reset) {
+                if (st.images) delete st.images[b.dataset.reset];
+            } else if (b.dataset.all !== undefined) {
+                delete st.colors; delete st.images; delete st.cn; delete st.tw;
+            } else return;
+            applyStyle();
+            save();
+            sync();
+        });
+        p.syncInputs = sync;
+        return p;
+    }
+
+    function stylePanel(on) {
+        const p = buildPanel();
+        if (on) p.syncInputs();
+        body.classList.toggle('ar-styling', on);
+    }
+
+    // 点到样张卡和竖签以外的地方就收起来（颜色选择器弹出来时不算）
+    doc.addEventListener('pointerdown', (e) => {
+        if (!body.classList.contains('ar-styling')) return;
+        if (e.target.closest('#ar-style, #ar-side')) return;
+        stylePanel(false);
+    }, true);
 
     const c = ctx();
     const es = c?.eventSource;
