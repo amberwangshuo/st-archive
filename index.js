@@ -360,8 +360,14 @@
         ['Special Elite', '"Special Elite", "Courier New", monospace', 'https://fonts.loli.net/css2?family=Special+Elite&display=swap'],
         ['IBM Plex Mono', '"IBM Plex Mono", "Courier New", monospace', 'https://fonts.loli.net/css2?family=IBM+Plex+Mono:wght@300;400&display=swap'],
     ];
+    // 每条消息的排版：名字、body 上的 class
+    const LAYOUTS = [
+        ['分隔签', ''],
+        ['证件照', 'ar-lay-id'],
+        ['居中', 'ar-lay-center'],
+    ];
     const IMAGES = [
-        ['--ar-shadow', 'desk', '台面的光影', 1400],
+        ['--ar-shadow', 'desk', '底图（台面）', 1600],
         ['--ar-photo', 'photo', '封面袋里的照片', 700],
         ['--ar-sq1', 'sq1', '书眉小方图 左', 240],
         ['--ar-sq2', 'sq2', '书眉小方图 右', 240],
@@ -401,6 +407,9 @@
         const tw = TW_FONTS[s.tw ?? 0];
         if (s.cn) { root.setProperty('--ar-cn', cn[1]); loadCss(cn[2], `ar-font-cn-${s.cn}`); } else root.removeProperty('--ar-cn');
         if (s.tw) { root.setProperty('--ar-tw', tw[1]); loadCss(tw[2], `ar-font-tw-${s.tw}`); } else root.removeProperty('--ar-tw');
+        // 消息的排版、底图用不用酒馆自己的背景
+        for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, LAYOUTS[s.lay ?? 0][1] === cls);
+        body.classList.toggle('ar-bg-st', !!s.bgST);
     }
 
     function clearStyle() {
@@ -409,6 +418,8 @@
         for (const [v] of IMAGES) root.removeProperty(v);
         root.removeProperty('--ar-cn');
         root.removeProperty('--ar-tw');
+        for (const [, cls] of LAYOUTS) if (cls) body.classList.remove(cls);
+        body.classList.remove('ar-bg-st');
     }
 
     // 上传的图先缩小再存，免得设置文件太大
@@ -449,7 +460,11 @@
                 <div class="ar-presets">${PRESETS.map(([n, c], i) => `<button data-p="${i}" title="${n}"><span>${c.slice(0, 4).map((x) => `<i style="background:${x}"></i>`).join('')}</span><em>${n}</em></button>`).join('')}</div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
             </section>
+            <section><h4>排版</h4>
+                <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><i class="l${i}"></i><em>${n}</em></button>`).join('')}</div>
+            </section>
             <section><h4>图片</h4>
+                <label class="ar-row ar-check"><input type="checkbox" data-bgst><span>底图用酒馆自己的背景</span></label>
                 ${IMAGES.map(([, key, n]) => `<div class="ar-img" data-k="${key}"><span>${n}</span><label class="ar-btn">换一张<input type="file" accept="image/*" hidden></label><button class="ar-btn" data-reset="${key}">还原</button></div>`).join('')}
             </section>
             <section><h4>字体</h4>
@@ -462,6 +477,9 @@
         const sync = () => {
             for (const inp of p.querySelectorAll('input[type=color]')) inp.value = hex(current(inp.dataset.v));
             for (const sel of p.querySelectorAll('select')) sel.value = String(store()?.[sel.dataset.f] ?? 0);
+            for (const b of p.querySelectorAll('[data-lay]')) b.classList.toggle('on', Number(b.dataset.lay) === (store()?.lay ?? 0));
+            const bg = p.querySelector('[data-bgst]');
+            if (bg) bg.checked = !!store()?.bgST;
         };
         p.addEventListener('input', (e) => {
             const v = e.target.dataset?.v;
@@ -476,6 +494,11 @@
         p.addEventListener('change', async (e) => {
             const st = store();
             if (!st) return;
+            if (e.target.dataset?.bgst !== undefined) {
+                st.bgST = e.target.checked;
+                applyStyle();
+                save();
+            }
             if (e.target.dataset?.f) {
                 st[e.target.dataset.f] = Number(e.target.value);
                 applyStyle();
@@ -498,10 +521,12 @@
             if (b.classList.contains('ar-x')) { stylePanel(false); return; }
             if (b.dataset.p !== undefined) {
                 st.colors = Object.fromEntries(VARS.map(([v], i) => [v, PRESETS[b.dataset.p][1][i]]));
+            } else if (b.dataset.lay !== undefined) {
+                st.lay = Number(b.dataset.lay);
             } else if (b.dataset.reset) {
                 if (st.images) delete st.images[b.dataset.reset];
             } else if (b.dataset.all !== undefined) {
-                delete st.colors; delete st.images; delete st.cn; delete st.tw;
+                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.bgST;
             } else return;
             applyStyle();
             save();
