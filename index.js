@@ -1,7 +1,8 @@
 // 档案 archive 的配套插件（试作）
 // 只在「档案」主题生效时工作：
 // · 隔页上凸出三枚签：archive（点它露出顶栏图标）、records（聊天记录）、index（角色）
-// · 输入栏是一张别在纸下沿的卡片；别的插件的按钮、快速回复收进卡片第二行，点卡片才展开
+// · 输入栏是隔页下沿口袋里的一张 MEMO 卡，点口袋抽出来；别的插件的按钮、快速回复收在卡片第二行
+// · 侧面四枚签：style（调色换图换字体）、lore（世界书）、preset（AI 设置）、persona（人设）
 // · 欢迎页先是封面（磨砂档案袋里抽出最近那位的名字卡和相纸），records 签翻到最近聊天
 // 没装这个插件时，主题照样能用：图标一直显示，只有一枚签，输入栏点中间也能抽出来。
 
@@ -95,6 +96,15 @@
         paint();
     }
 
+    // 侧面的签：样张卡，和三个最常开的抽屉
+    const drawer = (id) => () => doc.querySelector(`#${id} > .drawer-toggle`)?.click();
+    const SIDES = [
+        ['s1', 'style', '调色、换图、换字体', () => stylePanel(!body.classList.contains('ar-styling'))],
+        ['s2', 'lore', '世界书', drawer('WI-SP-button')],
+        ['s3', 'preset', 'AI 设置', drawer('ai-config-button')],
+        ['s4', 'persona', '人设', drawer('persona-management-button')],
+    ];
+
     // 三枚签：从后往前 index、records、archive
     // 在欢迎页上，records 和 archive 是在插袋格和封面之间翻；封面上再点 archive 才露出图标
     const TABS = [
@@ -150,14 +160,19 @@
             tabs.append(el);
         }
         sheld.prepend(tabs);
-        // 隔页右边的竖签：样张卡（调色、换图、换字体）
-        const side = doc.createElement('div');
-        side.id = 'ar-side';
-        side.setAttribute('role', 'button');
-        side.title = '调色、换图、换字体';
-        side.innerHTML = '<b>style</b>';
-        side.addEventListener('click', () => stylePanel(!body.classList.contains('ar-styling')));
-        sheld.append(side);
+        // 侧面的四枚签：各长在一张隔页上
+        const sides = doc.createElement('div');
+        sides.id = 'ar-sides';
+        for (const [cls, label, title, act] of SIDES) {
+            const el = doc.createElement('div');
+            el.className = `ar-s ${cls}`;
+            el.setAttribute('role', 'button');
+            el.title = title;
+            el.innerHTML = `<b>${label}</b>`;
+            el.addEventListener('click', act);
+            sides.append(el);
+        }
+        sheld.append(sides);
         fill();
         applyStyle();
     }
@@ -213,7 +228,8 @@
         doc.documentElement.style.removeProperty('--ar-ava');
         doc.getElementById('ar-tabs')?.remove();
         doc.getElementById('ar-cover')?.remove();
-        doc.getElementById('ar-side')?.remove();
+        doc.getElementById('ar-sides')?.remove();
+        doc.documentElement.style.removeProperty('--ar-pull');
         doc.getElementById('ar-style')?.remove();
         clearStyle();
         tabs = null;
@@ -255,9 +271,18 @@
         open(false);
     }, true);
 
-    // 输入卡片：点它或开始打字时展开工具格（body.ar-memo）；框里没字、点到别处时收起
-    // 工具格展开时纸的下边会多留一截（主题里），原来停在最底下的话就跟着滚到底
+    // MEMO 卡抽出来要走多远：整张卡片的高度，减去留在袋口里的那一小截
+    function measure() {
+        const card = doc.getElementById('nonQRFormItems');
+        if (!card || !card.offsetHeight) return;
+        doc.documentElement.style.setProperty('--ar-pull', `${Math.max(20, card.offsetHeight - 16)}px`);
+    }
+    doc.addEventListener('input', (e) => { if (e.target === textarea()) requestAnimationFrame(measure); }, true);
+
+    // MEMO 卡：点口袋或开始打字时抽出来（body.ar-memo）；框里没字、点到别处时沉回去
+    // 抽出来时纸的下边会多留一截（主题里），原来停在最底下的话就跟着滚到底
     const memo = (on) => {
+        if (on) measure();
         if (body.classList.contains('ar-memo') === on) return;
         const chat = doc.getElementById('chat');
         const atBottom = chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
@@ -270,7 +295,13 @@
         if (!body.classList.contains('ar-tab')) return;
         const form = e.target.closest('#send_form');
         if (form) {
+            const wasOpen = body.classList.contains('ar-memo');
             memo(true);
+            // 收着的时候点口袋只是把卡片抽出来，光标放进输入框
+            if (!wasOpen && !e.target.closest('#send_textarea')) {
+                e.preventDefault();
+                setTimeout(() => textarea()?.focus(), 0);
+            }
             return;
         }
         // 点到别处：框里没字就把工具格收回去（弹出的菜单里点不算）
@@ -291,12 +322,11 @@
         }).observe(holder, { subtree: true, attributes: true, attributeFilter: ['class'] });
     }
 
-    // ── 欢迎页那叠档案、角色抽屉里的文件夹：手机上第一次点只把那份提起来，再点才打开
+    // ── 欢迎页那叠档案：手机上第一次点只把那份提起来，再点才打开
     //    （电脑上鼠标移上去就算提起来了） ──
     let passClick = false;
     const PILES = [
         ['#chat .welcomePanel .recentChat', '.chatActions'],
-        ['#rm_print_characters_block .character_select, #rm_print_characters_block .group_select', '.ch_fav_icon'],
     ];
     doc.addEventListener('click', (e) => {
         if (passClick || !body.classList.contains('ar-tab')) return;
@@ -496,7 +526,7 @@
     // 点到样张卡和竖签以外的地方就收起来（颜色选择器弹出来时不算）
     doc.addEventListener('pointerdown', (e) => {
         if (!body.classList.contains('ar-styling')) return;
-        if (e.target.closest('#ar-style, #ar-side')) return;
+        if (e.target.closest('#ar-style, #ar-sides')) return;
         stylePanel(false);
     }, true);
 
