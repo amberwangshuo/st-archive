@@ -229,7 +229,6 @@
         doc.getElementById('ar-tabs')?.remove();
         doc.getElementById('ar-cover')?.remove();
         doc.getElementById('ar-sides')?.remove();
-        doc.documentElement.style.removeProperty('--ar-pull');
         doc.getElementById('ar-style')?.remove();
         clearStyle();
         tabs = null;
@@ -271,23 +270,15 @@
         open(false);
     }, true);
 
-    // MEMO 卡抽出来要走多远：整张卡片的高度，减去留在袋口里的那一小截
-    function measure() {
-        const card = doc.getElementById('nonQRFormItems');
-        if (!card || !card.offsetHeight) return;
-        doc.documentElement.style.setProperty('--ar-pull', `${Math.max(20, card.offsetHeight - 16)}px`);
-    }
-    doc.addEventListener('input', (e) => { if (e.target === textarea()) requestAnimationFrame(measure); }, true);
-
     // MEMO 卡：点口袋或开始打字时抽出来（body.ar-memo）；框里没字、点到别处时沉回去
-    // 抽出来时纸的下边会多留一截（主题里），原来停在最底下的话就跟着滚到底
+    // 卡片升上来时上面那页纸会让出位置（变矮），原来停在最底下的话就跟着滚到底
     const memo = (on) => {
-        if (on) measure();
         if (body.classList.contains('ar-memo') === on) return;
         const chat = doc.getElementById('chat');
         const atBottom = chat && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
         body.classList.toggle('ar-memo', on);
-        if (atBottom) requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+        // 卡片是慢慢升上来的，等它停了再滚一次
+        if (atBottom) for (const t of [0, 250, 550]) setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, t);
     };
     const textarea = () => doc.getElementById('send_textarea');
     const empty = () => !(textarea()?.value ?? '').trim();
@@ -368,9 +359,9 @@
     ];
     const IMAGES = [
         ['--ar-shadow', 'desk', '台面的光影', 1400],
-        ['--ar-photo', 'photo', '夹在隔页后的照片', 700],
-        ['--ar-sq1', 'sq1', '书眉小方图 二', 240],
-        ['--ar-sq2', 'sq2', '书眉小方图 三', 240],
+        ['--ar-photo', 'photo', '封面袋里的照片', 700],
+        ['--ar-sq1', 'sq1', '书眉小方图 左', 240],
+        ['--ar-sq2', 'sq2', '书眉小方图 右', 240],
     ];
 
     const store = () => {
