@@ -229,6 +229,7 @@
         doc.getElementById('ar-tabs')?.remove();
         doc.getElementById('ar-cover')?.remove();
         doc.getElementById('ar-sides')?.remove();
+        doc.getElementById('ar-fonts')?.remove();
         doc.getElementById('ar-style')?.remove();
         clearStyle();
         tabs = null;
@@ -240,6 +241,8 @@
         if (themeOn()) {
             mount();
             body.classList.add('ar-tab');
+            // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
+            loadCss('https://fonts.loli.net/css2?family=Courier+Prime&family=Inter+Tight:wght@400;500;600&family=Noto+Sans+SC:wght@200;300;400&display=swap', 'ar-fonts');
             // 一进来就有面板开着（比如被钉住的世界书），图标要露出来，才点得到它把它关掉
             if (doc.querySelector('#top-settings-holder .drawer-content.openDrawer')) open(true);
             buildCover();
