@@ -621,6 +621,16 @@
         }
     }, true);
 
+    // ── 聊天记录（records）：酒馆把条数写成「12 💬)」，把数字取出来放在 data-ar-n 上，主题印成「12 条」 ──
+    function records() {
+        for (const el of doc.querySelectorAll('#select_chat_div .chat_messages_num:not([data-ar-n])')) {
+            const n = parseInt(el.textContent, 10);
+            if (Number.isFinite(n)) el.dataset.arN = String(n);
+        }
+    }
+    const recList = doc.getElementById('select_chat_div');
+    if (recList) new MutationObserver(() => { if (body.classList.contains('ar-tab')) records(); }).observe(recList, { childList: true, subtree: true });
+
     // ── 封面：打开酒馆时先看到桌上一只合着的文件夹（样子在主题里），点一下进去；点拍立得可以放大看。每次打开页面只出现一次 ──
     let coverDone = false;
     function cover() {
