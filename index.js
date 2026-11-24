@@ -177,7 +177,9 @@
         doc.getElementById('ar-under')?.remove();
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
-        for (const f of doc.querySelectorAll('.ar-folio')) f.remove();
+        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch')) f.remove();
+        for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
+        doc.getElementById('ar-font-hand')?.remove();
         doc.getElementById('ar-cover')?.remove();
         doc.documentElement.style.removeProperty('--ar-top');
         if (themeColor0 !== null) doc.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor0);
@@ -204,6 +206,8 @@
             body.classList.toggle('ar-home', home());
             gatherTools();
             dress();
+            scratch();
+            indents();
             folio();
             wall();
             topColor();
@@ -402,14 +406,15 @@
         ['布纹信纸', '', '--ar-linen', '190px 190px'],
     ];
     const PAPER_ORDER = [0, 6, 7, 1, 2, 3, 4, 5];
-    // 每种版式默认配的纸：图录页 棉纸、刊物 书纸、信 布纹信纸；在哪种版式下选的纸只记给那种版式
-    const PAPER_DEF = [0, 6, 7];
+    // 每种版式默认配的纸：图录页 棉纸、刊物 书纸、信 布纹信纸、草稿 方格；在哪种版式下选的纸只记给那种版式
+    const PAPER_DEF = [0, 6, 7, 2];
     const paperOf = (s) => s?.papers?.[s.lay ?? 0] ?? PAPER_DEF[s?.lay ?? 0] ?? 0;
     // 每张纸的版式：名字、body 上的 class
     const LAYOUTS = [
         ['图录页', ''],
         ['刊物', 'ar-lay-b'],
         ['信', 'ar-lay-c'],
+        ['草稿', 'ar-lay-d'],
     ];
     const IMAGES = [
         ['--ar-shadow', 'desk', '底图（台面）', 1600],
@@ -423,7 +428,7 @@
     // 自己上传的纸纹单独存（不在「图片」那一栏里，在「纸纹」那一栏）
     // 可以改的几行字：键、说明、默认值、是不是多行
     const TEXTS = [
-        ['title', '刊物的标题（{n} 是英文数字，{no} 是阿拉伯数字）', 'Page {n}', false, 1],
+        ['title', '刊物的标题', '无题', false, 1],
         ['addr', '角色来信的地址', '19 Rue des Archives, 75004 Paris', false, 2],
         ['addr2', '你回信的地址', '7 Rue Barbette, 75003 Paris', false, 2],
         ['dear', '信的称呼（{name} 是对方的名字）', 'Dear {name},', false, 2],
@@ -447,6 +452,8 @@
         }
         // 0.10.1：信头地址的默认值从 Private Archive 换成真的地址，旧的默认值别留着
         if (s.texts?.addr === 'Private Archive') delete s.texts.addr;
+        // 0.13：刊物标题的默认值从「Page {n}」换成「无题」（她说 Page Zero 绝对不可以），旧的默认值别留着
+        if (s.texts?.title === 'Page {n}') delete s.texts.title;
         // 0.11：纸纹改成每种版式各记各的。旧的那一个选择：是「自己上传」就留给现在的版式，别的不留（三种版式各用新的默认纸）
         if (s.paper !== undefined) {
             if (s.paper === 5) { s.papers ??= {}; s.papers[s.lay ?? 0] ??= 5; }
@@ -620,6 +627,59 @@
             c.swipe.to(null, dir, { forceSwipeId: n, source: 'swipe_picker' });
         }
     }, true);
+
+    // ── 版式四 · 草稿：每张纸最上面印一道数学题，下面是铅笔写的几步演算（没做完）。十道题按消息编号轮着出 ──
+    // q 是题（<i> 是斜体的字母），w 是演算的几行：<span class="c"> 圈起来、<span class="x"> 划掉、<span class="u"> 下面画两道
+    const SCRATCH = [
+        ['已知函数 <i>f</i>(<i>x</i>) = <i>x</i>³ − 3<i>x</i> + 1，求 <i>f</i>(<i>x</i>) 在区间 [−2, 2] 上的最大值与最小值。',
+            ['<span class="x">f \'(x) = 3x² − 3x</span>', 'f \'(x) = 3x² − 3 = 0 , <span class="c">x = ±1</span>', 'f(−1) = 3 , f(1) = −1', 'f(−2) = −8 + 6 + 1 = −1 , f(2) = ?']],
+        ['等差数列 {<i>a</i><sub>n</sub>} 中，<i>a</i><sub>3</sub> = 7，<i>a</i><sub>7</sub> = 19，求前 10 项和 <i>S</i><sub>10</sub>。',
+            ['4d = 19 − 7 = 12 , <span class="c">d = 3</span>', 'a1 = 7 − 2d = 1', 'S10 = 10·a1 + 45d = <span class="u">10 + 45·3</span> = ...']],
+        ['袋中有 3 个红球、2 个白球，不放回地依次取出 2 个，求两球颜色不同的概率。',
+            ['<span class="x">P = 3/5 · 2/5</span>', 'P = (3·2 + 2·3) / (5·4)', '= <span class="c">12 / 20</span> = ?']],
+        ['在 △<i>ABC</i> 中，<i>a</i> = 7，<i>b</i> = 5，<i>c</i> = 3，求角 <i>A</i> 的大小。',
+            ['cos A = (b² + c² − a²) / 2bc', '= (25 + 9 − 49) / 30', '= <span class="c">−1/2</span>', 'A = ...']],
+        ['求不等式 <i>x</i>² − 5<i>x</i> + 6 &lt; 0 的解集。',
+            ['(x − 2)(x − 3) &lt; 0', '<span class="x">x &lt; 2 , x &gt; 3</span>', '<span class="u">2 &lt; x</span> ...']],
+        ['已知 sin <i>A</i> = 3/5，且 <i>A</i> 为第二象限角，求 tan 2<i>A</i> 的值。',
+            ['cos A = <span class="c">−4/5</span>', 'tan A = −3/4', 'tan 2A = 2 tan A / (1 − tan² A)', '= (−3/2) / (1 − 9/16) = ...']],
+        ['直线 <i>y</i> = <i>x</i> + <i>m</i> 与圆 <i>x</i>² + <i>y</i>² = 2 相切，求实数 <i>m</i> 的值。',
+            ['d = |m| / √2 = r', 'r = √2', '<span class="c">|m| = 2</span>', 'm = ?']],
+        ['求函数 <i>y</i> = <i>x</i> + 4/<i>x</i>（<i>x</i> &gt; 0）的最小值。',
+            ['<span class="x">y\' = 1 + 4/x²</span>', 'x + 4/x ≥ 2·√(x · 4/x)', 'x = 4/x , <span class="c">x = 2</span>', 'y min = ...']],
+        ['已知向量 <b>a</b> = (1, 2)，<b>b</b> = (<i>x</i>, −1)，若 <b>a</b> ⊥ <b>b</b>，求 |<b>a</b> + <b>b</b>|。',
+            ['a·b = x − 2 = 0 , <span class="c">x = 2</span>', 'a + b = (3, 1)', '|a + b| = √(9 + 1) = ...']],
+        ['计算定积分 ∫<sub>0</sub><sup>1</sup> (3<i>x</i>² + 2<i>x</i>) d<i>x</i>。',
+            ['[ x³ + x² ]  0 → 1', '<span class="x">= 3 + 2</span>', '= <span class="u">(1 + 1) − 0</span> = ...']],
+    ];
+    function scratch() {
+        const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
+        if (on) loadCss('https://fonts.loli.net/css2?family=Caveat:wght@400;500&display=swap', 'ar-font-hand');
+        for (const el of doc.querySelectorAll('#chat > .mes[mesid]')) {
+            let sc = el.querySelector(':scope > .ar-scratch');
+            if (!on) { sc?.remove(); continue; }
+            const id = Number(el.getAttribute('mesid'));
+            if (sc?.dataset.id === String(id)) continue;
+            const [q, w] = SCRATCH[id % SCRATCH.length];
+            if (!sc) {
+                sc = doc.createElement('div');
+                sc.className = 'ar-scratch';
+                const blk = el.querySelector(':scope > .mes_block');
+                el.insertBefore(sc, blk ?? null);
+            }
+            sc.dataset.id = String(id);
+            sc.innerHTML = `<p class="q"><b>${id + 1}.</b>（本小题满分 12 分）${q}</p><div class="w">${w.map((x) => `<p>${x}</p>`).join('')}</div>`;
+        }
+    }
+
+    // ── 段首缩进：主题给每段空两格；模型自己已经在段首打了空格的段落标出来，主题就不再空（不然变成四格） ──
+    function indents() {
+        for (const p of doc.querySelectorAll('#chat .mes .mes_text p')) {
+            const t = p.firstChild?.nodeType === 3 ? p.firstChild.nodeValue : p.textContent;
+            const own = /^[\u3000\u2003\u2002\u00a0 ]{2,}|^\u3000/.test(t ?? '');
+            if (own) p.setAttribute('data-ar-ind', ''); else p.removeAttribute('data-ar-ind');
+        }
+    }
 
     // ── 聊天记录（records）：酒馆把条数写成「12 💬)」，把数字取出来放在 data-ar-n 上，主题印成「12 条」 ──
     function records() {
@@ -989,7 +1049,7 @@
     const et = c?.eventTypes ?? c?.event_types ?? {};
     if (es?.on) {
         for (const k of ['CHAT_CHANGED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_DELETED', 'CHARACTER_EDITED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_UPDATED', 'CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MORE_MESSAGES_LOADED']) {
-            if (et[k]) es.on(et[k], () => { sync(); fill(); setTimeout(() => { dress(); folio(); }, 60); });
+            if (et[k]) es.on(et[k], () => { sync(); fill(); setTimeout(() => { dress(); scratch(); indents(); folio(); }, 60); });
         }
         // 发出去之后、换聊天时把工具格收起来
         for (const k of ['MESSAGE_SENT', 'CHAT_CHANGED']) {
