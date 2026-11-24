@@ -38,9 +38,9 @@
         ['s4', 'persona', '人设', drawer('persona-management-button')],
     ];
 
-    // 三枚签：从后往前 index、records、archive
+    // 三枚签：从后往前 characters（角色）、records（聊天记录）、archive（全部图标）
     const TABS = [
-        { cls: 't3', label: 'index', act: () => doc.getElementById('rightNavDrawerIcon')?.click() },
+        { cls: 't3', label: 'characters', act: () => doc.getElementById('rightNavDrawerIcon')?.click() },
         {
             // records：聊天里打开这位的聊天记录；欢迎页上展开 / 收起更早的聊天
             cls: 't2', label: 'records', act: () => {
@@ -178,6 +178,7 @@
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
         for (const f of doc.querySelectorAll('.ar-folio')) f.remove();
+        doc.getElementById('ar-cover')?.remove();
         doc.documentElement.style.removeProperty('--ar-top');
         if (themeColor0 !== null) doc.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor0);
         topKey = '';
@@ -206,6 +207,7 @@
             folio();
             wall();
             topColor();
+            cover();
             letters();
         } else if (body.classList.contains('ar-tab')) {
             unmount();
@@ -411,7 +413,9 @@
     ];
     const IMAGES = [
         ['--ar-shadow', 'desk', '底图（台面）', 1600],
-        ['--ar-photo', 'photo', '封面袋里的照片', 700],
+        ['--ar-photo', 'photo', '封面上那张拍立得', 700],
+        ['--ar-cv1', 'cv1', '封面后面露出的相片 一', 700],
+        ['--ar-cv2', 'cv2', '封面后面露出的相片 二', 700],
         ['--ar-mood1', 'mood1', '氛围图 一', 600],
         ['--ar-mood2', 'mood2', '氛围图 二', 600],
         ['--ar-wash', 'wash', '输入标签下面晕开的图', 500],
@@ -575,9 +579,19 @@
             f.innerHTML = h;
         }
     }
+    // 页码平时是藏着的：点到那一条（号码这时点不到）先让它出现，过几秒自己收回去
+    const folioTimers = new WeakMap();
+    const showFolio = (f) => {
+        f.classList.add('show');
+        clearTimeout(folioTimers.get(f));
+        folioTimers.set(f, setTimeout(() => f.classList.remove('show'), 5000));
+    };
     doc.addEventListener('click', (e) => {
+        const f = e.target.closest?.('.ar-folio');
+        if (f && !e.target.closest('.ar-folio button')) { e.preventDefault(); e.stopPropagation(); showFolio(f); return; }
         const b = e.target.closest?.('.ar-folio button');
         if (!b) return;
+        showFolio(b.closest('.ar-folio'));
         e.preventDefault();
         e.stopPropagation();
         const el = b.closest('.mes');
@@ -606,6 +620,33 @@
             c.swipe.to(null, dir, { forceSwipeId: n, source: 'swipe_picker' });
         }
     }, true);
+
+    // ── 封面：打开酒馆时先看到桌上一只合着的文件夹（样子在主题里），点一下进去；点拍立得可以放大看。每次打开页面只出现一次 ──
+    let coverDone = false;
+    function cover() {
+        if (coverDone) return;
+        coverDone = true;
+        if (store()?.cover === false || doc.getElementById('ar-cover')) return;
+        const d = new Date();
+        const p2 = (n) => String(n).padStart(2, '0');
+        const el = doc.createElement('div');
+        el.id = 'ar-cover';
+        el.innerHTML = `<div class="cv">
+            <div class="bk bk1"><i></i></div><div class="bk bk2"><i></i></div>
+            <div class="sh"><div class="tb"><b>archive</b></div><div class="fd"></div></div>
+            <div class="lb lb1">PHOTOGRAPHS \u00b7 DO NOT BEND</div>
+            <div class="ph"><i></i><span class="lb">${p2(d.getDate())} . ${p2(d.getMonth() + 1)} . ${d.getFullYear()}</span></div>
+        </div>`;
+        el.addEventListener('click', (e) => {
+            const ph = e.target.closest('.ph');
+            if (ph) { ph.classList.toggle('zoom'); return; }
+            if (el.querySelector('.ph.zoom')) { el.querySelector('.ph.zoom').classList.remove('zoom'); return; }
+            el.classList.add('out');
+            setTimeout(() => el.remove(), 600);
+        });
+        // 挂在 <html> 下面而不是 body 里：酒馆的 body 自己没有高度还会裁掉超出的部分，放在里面的满屏元素整个看不见
+        doc.documentElement.append(el);
+    }
 
     function undress() {
         for (const el of doc.querySelectorAll('#chat > .mes[data-ar-sig]')) {
@@ -785,6 +826,7 @@
             </section>
             <section><h4>图片</h4>
                 <label class="ar-row ar-check"><input type="checkbox" data-bgst><span>底图用酒馆自己的背景</span></label>
+                <label class="ar-row ar-check"><input type="checkbox" data-cover><span>打开酒馆时先看封面</span></label>
                 ${IMAGES.map(([, key, n]) => `<div class="ar-img ar-row" data-k="${key}"><span>${n}</span><label class="ar-btn">换一张<input type="file" accept="image/*" hidden></label><button class="ar-btn" data-reset="${key}">还原</button></div>`).join('')}
             </section>
             <section><h4>字体</h4>
@@ -810,6 +852,8 @@
             for (const inp of p.querySelectorAll('[data-t]')) inp.value = text(inp.dataset.t);
             const bg = p.querySelector('[data-bgst]');
             if (bg) bg.checked = !!store()?.bgST;
+            const cvb = p.querySelector('[data-cover]');
+            if (cvb) cvb.checked = store()?.cover !== false;
             for (const row of p.querySelectorAll('[data-lay-only]')) {
                 const l = Number(row.dataset.layOnly);
                 row.hidden = l !== -1 && l !== (store()?.lay ?? 0);
@@ -843,6 +887,10 @@
         p.addEventListener('change', async (e) => {
             const st = store();
             if (!st) return;
+            if (e.target.dataset?.cover !== undefined) {
+                st.cover = e.target.checked;
+                save();
+            }
             if (e.target.dataset?.bgst !== undefined) {
                 st.bgST = e.target.checked;
                 applyStyle();
