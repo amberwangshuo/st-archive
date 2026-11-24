@@ -177,7 +177,7 @@
         doc.getElementById('ar-under')?.remove();
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
-        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch')) f.remove();
+        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-exq')) f.remove();
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
         for (const x of doc.querySelectorAll('#chat > .mes')) { x.style.removeProperty('--ar-foot'); x.style.removeProperty('--ar-kh'); }
         doc.getElementById('ar-cover')?.remove();
@@ -639,35 +639,32 @@
         }
     }, true);
 
-    // ── 版式四 · 答卷：照真的试卷。每张纸印一道题，正文就是答案。九道题按消息编号轮着出 ──
-    // 题型和问法照高考真题（语文材料作文、历史开放性论述题、政治主观题），材料是自己写的；没有分数批改
-    const ESSAY_REQ = '要求：选准角度，确定立意，明确文体，自拟标题；不要套作，不得抄袭；不得泄露个人信息；不少于 800 字。';
-    const ESSAY_ASK = '以上材料引发了你怎样的联想和思考？请写一篇文章。';
-    const EXAM = [
-        { subj: '语文', sec: '四、写作（60 分）', q: '23. 阅读下面的材料，根据要求写作。（60 分）',
-            m: ['一封信寄出之后，写信的人就无法再改动其中的一个字；而读信的人，往往要过很久，才读懂当时没有读懂的那一句。'], a: ESSAY_ASK, r: ESSAY_REQ },
-        { subj: '历史', q: '42. 阅读材料，完成下列要求。（12 分）',
-            m: ['材料　在电报和电话普及以前，书信几乎是人们相隔两地时唯一的联系方式。一封家书从寄出到送达，短则数日，长则数月；写信人落笔时的消息，到收信人手中往往已是旧闻。即便如此，人们仍然在信中约定归期、商量婚嫁、托付家事。'],
-            a: '根据材料并结合所学知识，围绕“通信方式与社会生活”自拟一个论题，并予以阐述。（要求：论题明确，史论结合，逻辑清晰。）' },
-        { subj: '思想政治', q: '40. 阅读材料，完成下列要求。（12 分）',
-            m: ['两个性格迥异的人长期相处，起初处处是摩擦：一个习惯把话说尽，一个习惯把话留在心里。时间久了，他们并没有变成同一种人，却各自学会了对方的一点方式。'],
-            a: '结合材料，运用“矛盾的同一性和斗争性”的知识，说明应当怎样看待人与人相处中的分歧。' },
-        { subj: '语文', sec: '四、写作（60 分）', q: '23. 阅读下面的材料，根据要求写作。（60 分）',
-            m: ['有人说，了解一个人，要看他怎样对待离别；也有人说，要看他怎样对待重逢。'], a: ESSAY_ASK, r: ESSAY_REQ },
-        { subj: '历史', q: '42. 阅读材料，完成下列要求。（12 分）',
-            m: ['材料　照相术传入以后，起初只是少数人的新奇体验；到二十世纪初，城镇里的照相馆日渐增多，全家福、毕业照、结婚照成为许多家庭保存记忆的方式。有学者指出，普通人第一次能够看见自己年轻时的样子。'],
-            a: '根据材料并结合所学知识，围绕“技术变迁与日常生活”自拟一个论题，并予以阐述。（要求：论题明确，史论结合，逻辑清晰。）' },
-        { subj: '思想政治', q: '40. 阅读材料，完成下列要求。（12 分）',
-            m: ['一位修复古籍的师傅说，一页纸上要补千百个小洞，每补一个都看不出变化；可是某一天把它举到灯下，它已经是完整的一页了。'],
-            a: '结合材料，运用“量变与质变的辩证关系”的知识，说明这段话给我们的启示。' },
-        { subj: '语文', sec: '四、写作（60 分）', q: '23. 阅读下面的材料，根据要求写作。（60 分）',
-            m: ['照片留住的是一个瞬间的样子，记忆留住的却是那个瞬间的感受。时间久了，两者常常对不上。'], a: ESSAY_ASK, r: ESSAY_REQ },
-        { subj: '历史', q: '42. 阅读材料，完成下列要求。（12 分）',
-            m: ['材料　钟表进入日常生活之前，人们依照日出日落、节气农时安排作息；铁路时刻表和工厂汽笛出现以后，“几点几分”才成为许多人必须遵守的约定。'],
-            a: '根据材料并结合所学知识，围绕“时间观念的变化”自拟一个论题，并予以阐述。（要求：论题明确，史论结合，逻辑清晰。）' },
-        { subj: '思想政治', q: '40. 阅读材料，完成下列要求。（12 分）',
-            m: ['同一场雨，赶路的人嫌它误事，等雨的农人却盼了许久；多年以后回想起来，赶路的人记得的，也许只是雨中有人递来的一把伞。'],
-            a: '结合材料，运用“意识的能动作用”的知识，分析人们对同一件事的感受为什么不同、又为什么会改变。' },
+    // ── 版式四 · 答卷：语文试卷里的现代文阅读。正文是要读的文字，后面三道小题（宽泛的，不提具体情节和名字），十八道轮着出 ──
+    // 问法照高考语文「文学类文本阅读」的主观题
+    const EXAM_Q = [
+        '请简要分析文中主要人物的心理变化过程。（6 分）',
+        '文中的环境描写有什么作用？请结合文本简要分析。（4 分）',
+        '文本在叙述上有什么特点？请结合内容简要分析。（6 分）',
+        '文中人物之间的对话有什么特点？对表现人物关系有什么作用？（4 分）',
+        '结尾部分有怎样的艺术效果？请结合全文谈谈你的理解。（6 分）',
+        '文中多次写到人物的动作细节，请任选一处，分析其表达效果。（4 分）',
+        '有人认为，文中“没有说出口的话”比说出口的话更重要。你是否同意？请结合文本说明理由。（6 分）',
+        '请从“距离”的角度，分析文中人物之间关系的变化。（6 分）',
+        '文本的语言有什么特色？请举例简要赏析。（4 分）',
+        '文中的沉默与停顿有什么作用？请简要分析。（4 分）',
+        '文中人物的言行与内心是否一致？请结合具体内容分析。（6 分）',
+        '文本是如何营造氛围的？请简要分析。（4 分）',
+        '请简要概括本文的情节，并分析其结构上的特点。（6 分）',
+        '文中哪一处细节最能体现人物性格？请指出并分析。（4 分）',
+        '文本中时间的流动是怎样表现的？这样处理有什么好处？（6 分）',
+        '请分析文中有关“目光”的描写在文本中的作用。（4 分）',
+        '如果为本文拟一个标题，你会怎样拟？请说明理由。（4 分）',
+        '文中的叙述视角有什么特点？这种视角对读者的感受有什么影响？（6 分）',
+    ];
+    const EXAM_NOTES = [
+        '1. 答卷前，考生务必将自己的姓名、准考证号填写在答题卡上。',
+        '2. 回答非选择题时，将答案写在答题卡上，写在本试卷上无效。',
+        '3. 考试结束后，将本试卷和答题卡一并交回。',
     ];
     function scratch() {
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
@@ -676,33 +673,44 @@
         const p2 = (n) => String(n).padStart(2, '0');
         for (const el of doc.querySelectorAll('#chat > .mes[mesid]')) {
             let sc = el.querySelector(':scope > .ar-scratch');
+            let ex = el.querySelector('.mes_block > .ar-exq');
             if (!on) {
                 sc?.remove();
+                ex?.remove();
                 el.style.removeProperty('--ar-foot');
                 el.style.removeProperty('--ar-kh');
                 continue;
             }
             const id = Number(el.getAttribute('mesid'));
-            const x = EXAM[id % EXAM.length];
             const d = c?.chat?.[id] ? when(c, c.chat[id]) : null;
             const year = d ? d.getFullYear() : new Date().getFullYear();
             // 页脚里的总页数会随着聊天变长而变，每次都写
-            el.style.setProperty('--ar-foot', q(`${x.subj}试题　第 ${id + 1} 页（共 ${Math.max(total, id + 1)} 页）`));
+            el.style.setProperty('--ar-foot', q(`语文试题　第 ${id + 1} 页（共 ${Math.max(total, id + 1)} 页）`));
             el.style.setProperty('--ar-kh', q(`${d ? `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}` : '00000000'}${String(id + 1).padStart(4, '0')}`));
-            if (sc?.dataset.id === String(id)) continue;
-            if (!sc) {
-                sc = doc.createElement('div');
-                sc.className = 'ar-scratch';
-                el.insertBefore(sc, el.querySelector(':scope > .mes_block') ?? null);
+            // 题号接着前面几张往下排：第 id 张是 3id+1 ～ 3id+3
+            const n0 = id * 3 + 1;
+            if (sc?.dataset.id !== String(id)) {
+                if (!sc) {
+                    sc = doc.createElement('div');
+                    sc.className = 'ar-scratch';
+                    el.insertBefore(sc, el.querySelector(':scope > .mes_block') ?? null);
+                }
+                sc.dataset.id = String(id);
+                sc.innerHTML =
+                    (id === 0 ? `<div class="hd"><i>绝密★启用前</i><b>${year} 年普通高等学校招生全国统一考试</b><em>语文</em><u>注意事项</u>${EXAM_NOTES.map((t) => `<p>${t}</p>`).join('')}</div><p class="sec">现代文阅读</p>` : '') +
+                    `<p class="a">阅读下面的文字，完成 ${n0}～${n0 + 2} 题。</p>`;
             }
-            sc.dataset.id = String(id);
-            sc.innerHTML =
-                (id === 0 ? `<div class="hd"><i>绝密★启用前</i><b>${year} 届高三年级模拟考试</b><em>${x.subj}</em></div>` : '') +
-                (x.sec ? `<p class="sec">${x.sec}</p>` : '') +
-                `<p class="q">${x.q}</p>` +
-                x.m.map((t) => `<p class="m">${t}</p>`).join('') +
-                `<p class="a">${x.a}</p>` +
-                (x.r ? `<p class="r">${x.r}</p>` : '');
+            const blk = el.querySelector(':scope > .mes_block');
+            if (blk && ex?.dataset.id !== String(id)) {
+                if (!ex) {
+                    ex = doc.createElement('div');
+                    ex.className = 'ar-exq';
+                }
+                ex.dataset.id = String(id);
+                ex.innerHTML = [0, 1, 2].map((k) => `<p>${n0 + k}. ${EXAM_Q[(id * 3 + k) % EXAM_Q.length]}</p>`).join('');
+            }
+            // 酒馆重画这一条时可能把它挤到中间或者丢掉：保证它一直是 .mes_block 里的最后一个
+            if (blk && ex && blk.lastElementChild !== ex) blk.append(ex);
         }
     }
 
