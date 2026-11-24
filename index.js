@@ -25,76 +25,9 @@
         tabs?.querySelector('.t1')?.setAttribute('aria-expanded', String(on));
     }
 
-    // ── 欢迎页：封面和插袋格两面，用签切换 ──
-    // 封面：一只磨砂档案袋，袋口抽出最近聊过的那位的名字卡和相纸
-    // 插袋格：最近聊天（主题里的样式）
-    let view = 'cover';
+    // 欢迎页（v23 起没有封面了，她说看不出用处）：只记一下是不是在欢迎页
     const home = () => !!doc.querySelector('#chat .welcomePanel');
-    const latest = () => doc.querySelector('#chat .welcomePanel .recentChat');
-
-    function setView(v) {
-        view = v;
-        paint();
-    }
-
-    function paint() {
-        const h = home();
-        const cover = h && view === 'cover' && !!latest();
-        body.classList.toggle('ar-home', h);
-        body.classList.toggle('ar-cover', cover);
-        if (tabs) {
-            tabs.querySelector('.t1')?.classList.toggle('on', cover);
-            tabs.querySelector('.t2')?.classList.toggle('on', h && !cover);
-        }
-    }
-
     const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-
-    function buildCover() {
-        const sheld = doc.getElementById('sheld');
-        const rc = latest();
-        let el = doc.getElementById('ar-cover');
-        if (!sheld || !home() || !rc) { el?.remove(); paint(); return; }
-        const key = [rc.dataset.avatar, rc.dataset.group, rc.dataset.file].join('|');
-        if (el && el.dataset.key === key) { paint(); return; }
-
-        const name = rc.querySelector('.characterName')?.textContent.trim() ?? '';
-        const date = rc.querySelector('.chatDate')?.textContent.trim() ?? '';
-        // 最后一句里可能带着 HTML（比如系统消息），只留字
-        const mes = (rc.querySelector('.chatMessage')?.textContent ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-        const avatar = rc.dataset.avatar;
-        // 立绘用原图，群聊没有单人原图就用缩略图
-        const img = avatar ? `characters/${encodeURIComponent(avatar)}` : (rc.querySelector('.avatar img')?.getAttribute('src') ?? '');
-        const records = doc.querySelectorAll('#chat .welcomePanel .recentChat').length;
-        const chars = ctx()?.characters?.length ?? 0;
-        const pad = (n) => String(n).padStart(2, '0');
-
-        el?.remove();
-        el = doc.createElement('div');
-        el.id = 'ar-cover';
-        el.dataset.key = key;
-        el.innerHTML = `
-            <div class="ar-cv-back"></div>
-            <div class="ar-cv-sheet"></div>
-            <div class="ar-cv-dots"></div>
-            <div class="ar-cv-card" role="button"><small>PRIVATE ARCHIVE</small><h2>${esc(name)}</h2><em>${esc(date)}</em></div>
-            <div class="ar-cv-photo" role="button"><img alt="" src="${esc(img)}"></div>
-            <div class="ar-cv-pic"></div>
-            <div class="ar-cv-slip">
-                <p><span>LAST ENTRY</span><span>${esc(date)}</span></p>
-                <p><span>RECORDS</span><span>${pad(records)}</span></p>
-                <p><span>INDEX</span><span>${pad(chars)}</span></p>
-                <blockquote>${esc(mes)}</blockquote>
-            </div>
-            <div class="ar-cv-front" role="button"><b>archive</b></div>`;
-        // 点名字卡或相纸：打开这段聊天；点袋子：翻到插袋格
-        const openIt = () => { passClick = true; latest()?.click(); passClick = false; };
-        el.querySelector('.ar-cv-card').addEventListener('click', openIt);
-        el.querySelector('.ar-cv-photo').addEventListener('click', openIt);
-        el.querySelector('.ar-cv-front').addEventListener('click', () => setView('records'));
-        sheld.append(el);
-        paint();
-    }
 
     // 侧面的签：样张卡，和三个最常开的抽屉
     const drawer = (id) => () => doc.querySelector(`#${id} > .drawer-toggle`)?.click();
@@ -106,21 +39,16 @@
     ];
 
     // 三枚签：从后往前 index、records、archive
-    // 在欢迎页上，records 和 archive 是在插袋格和封面之间翻；封面上再点 archive 才露出图标
     const TABS = [
         { cls: 't3', label: 'index', act: () => doc.getElementById('rightNavDrawerIcon')?.click() },
         {
+            // records：聊天里打开这位的聊天记录；欢迎页上展开 / 收起更早的聊天
             cls: 't2', label: 'records', act: () => {
-                if (home()) setView('records');
+                if (home()) doc.querySelector('#chat .welcomePanel .showMoreChats')?.click();
                 else doc.getElementById('option_select_chat')?.click();
             },
         },
-        {
-            cls: 't1', label: 'archive', act: () => {
-                if (home() && latest() && view !== 'cover') { setView('cover'); return; }
-                open(!body.classList.contains('ar-open'));
-            },
-        },
+        { cls: 't1', label: 'archive', act: () => open(!body.classList.contains('ar-open')) },
     ];
 
     // 签上的字：跟着当前角色走
@@ -174,10 +102,13 @@
             sides.append(el);
         }
         sheld.append(sides);
-        // 夹子：咬在文件夹上沿，样子在主题里
+        // 夹子：从左边夹住整叠纸；垫在纸下面的波点纸（上沿一道蕾丝）。样子都在主题里
         const clip = doc.createElement('div');
         clip.id = 'ar-clip';
         sheld.append(clip);
+        const under = doc.createElement('div');
+        under.id = 'ar-under';
+        sheld.insertBefore(under, doc.getElementById('chat'));
         fill();
         applyStyle();
     }
@@ -232,7 +163,7 @@
         releaseTools();
         doc.documentElement.style.removeProperty('--ar-ava');
         doc.getElementById('ar-tabs')?.remove();
-        doc.getElementById('ar-cover')?.remove();
+        doc.getElementById('ar-under')?.remove();
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
         doc.getElementById('ar-fonts-cn')?.remove();
@@ -240,7 +171,8 @@
         doc.getElementById('ar-style')?.remove();
         clearStyle();
         tabs = null;
-        body.classList.remove('ar-tab', 'ar-open', 'ar-memo', 'ar-home', 'ar-cover', 'ar-styling');
+        body.classList.remove('ar-tab', 'ar-open', 'ar-memo', 'ar-home', 'ar-styling');
+        doc.documentElement.style.removeProperty('--ar-wall');
     }
 
     // 主题可能随时被换掉，过一会儿看一次
@@ -253,9 +185,10 @@
             loadCss('https://fontsapi.zeoseven.com/309/main/result.css', 'ar-fonts-cn');
             // 一进来就有面板开着（比如被钉住的世界书），图标要露出来，才点得到它把它关掉
             if (doc.querySelector('#top-settings-holder .drawer-content.openDrawer')) open(true);
-            buildCover();
+            body.classList.toggle('ar-home', home());
             gatherTools();
             dress();
+            wall();
         } else if (body.classList.contains('ar-tab')) {
             unmount();
         }
@@ -264,13 +197,9 @@
     // 欢迎页出现或离开时马上换（每次回到欢迎页都先看封面）
     const chatEl = doc.getElementById('chat');
     if (chatEl) {
-        let wasHome = false;
         new MutationObserver(() => {
             if (!body.classList.contains('ar-tab')) return;
-            const h = home();
-            if (h && !wasHome) view = 'cover';
-            wasHome = h;
-            buildCover();
+            body.classList.toggle('ar-home', home());
             dress();
         }).observe(chatEl, { childList: true });
     }
@@ -326,31 +255,18 @@
         }).observe(holder, { subtree: true, attributes: true, attributeFilter: ['class'] });
     }
 
-    // ── 欢迎页那叠档案：手机上第一次点只把那份提起来，再点才打开
-    //    （电脑上鼠标移上去就算提起来了） ──
-    let passClick = false;
-    const PILES = [
-        ['#chat .welcomePanel .recentChat', '.chatActions'],
-    ];
-    doc.addEventListener('click', (e) => {
-        if (passClick || !body.classList.contains('ar-tab')) return;
-        if (matchMedia('(hover: hover)').matches) return;
-        for (const [sel, skip] of PILES) {
-            const it = e.target.closest?.(sel);
-            if (!it || e.target.closest(skip)) continue;
-            if (it.classList.contains('ar-pulled')) return;
-            e.stopPropagation();
-            e.preventDefault();
-            doc.querySelectorAll('.ar-pulled').forEach((x) => x.classList.remove('ar-pulled'));
-            it.classList.add('ar-pulled');
-            return;
-        }
-    }, true);
+    function wall() {
+        const root = doc.documentElement.style;
+        if (!store()?.bgST) { root.removeProperty('--ar-wall'); return; }
+        const img = getComputedStyle(doc.getElementById('bg1') ?? body).backgroundImage;
+        if (img && img !== 'none') root.setProperty('--ar-wall', img);
+        else root.removeProperty('--ar-wall');
+    }
 
     // ── style 卡：配色（能存成自己的方案）、版式、几行可以改的字、图片、字体 ──
     const VARS = [
-        ['--ar-paper', '纸'], ['--ar-ink', '墨'], ['--ar-mute', '旁白'], ['--ar-accent', '文件夹'],
-        ['--ar-accent-ink', '文件夹上的字'], ['--ar-hi', '强调'], ['--ar-desk', '台面'],
+        ['--ar-paper', '纸（消息、抽屉、弹窗）'], ['--ar-ink', '字'], ['--ar-mute', '旁白（灰字）'], ['--ar-accent', '文件夹和签'],
+        ['--ar-accent-ink', '签上的字'], ['--ar-hi', '强调（加粗的字）'], ['--ar-desk', '台面（壁纸没盖住的地方）'],
     ];
     const PRESETS = [
         ['冷白灰蓝', ['#FCFCFB', '#1D1D1C', '#8f8d88', '#70899A', '#FFFFFF', '#4E6A7D', '#DADBDC']],
@@ -371,6 +287,16 @@
         ['Special Elite', '"Special Elite", "KingHwaOldSong", "Courier New", monospace', 'https://fonts.loli.net/css2?family=Special+Elite&display=swap'],
         ['IBM Plex Mono', '"IBM Plex Mono", "KingHwaOldSong", "Courier New", monospace', 'https://fonts.loli.net/css2?family=IBM+Plex+Mono:wght@300;400&display=swap'],
     ];
+    // 纸纹：名字、叠在纸上的一层图案（--ar-pat）、换掉棉纸纹理（--ar-cotton；'none' 是不要纹理）
+    const GRID = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M0 .3H16M.3 0V16' stroke='%231D1D1C' stroke-opacity='.09' stroke-width='.6' fill='none'/%3E%3C/svg%3E\") 0 0 / 16px 16px";
+    const PAPERS = [
+        ['棉纸', '', ''],
+        ['点阵', 'radial-gradient(circle, rgba(29, 29, 28, .2) .85px, transparent 1.25px) 0 0 / 14px 14px', ''],
+        ['方格', GRID, ''],
+        ['横线', 'repeating-linear-gradient(transparent 0 27px, rgba(29, 29, 28, .08) 27px 27.6px)', ''],
+        ['素白', '', 'none'],
+        ['自己上传', '', 'upload'],
+    ];
     // 每张纸的版式：名字、body 上的 class
     const LAYOUTS = [
         ['图录页', ''],
@@ -384,6 +310,7 @@
         ['--ar-mood2', 'mood2', '氛围图 二', 600],
         ['--ar-wash', 'wash', '输入标签下面晕开的图', 500],
     ];
+    // 自己上传的纸纹单独存（不在「图片」那一栏里，在「纸纹」那一栏）
     // 可以改的几行字：键、说明、默认值、是不是多行
     const TEXTS = [
         ['title', '刊物的标题（{n} 是英文数字，{no} 是阿拉伯数字）', 'Page {n}', false],
@@ -518,6 +445,14 @@
         for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, (LAYOUTS[s.lay ?? 0] ?? LAYOUTS[0])[1] === cls);
         body.classList.toggle('ar-bg-st', !!s.bgST);
         root.setProperty('--ar-addr', q(text('addr')));
+        // 纸纹
+        const pp = PAPERS[s.paper ?? 0] ?? PAPERS[0];
+        if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
+        if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
+        else if (pp[2] === 'upload' && s.paperTex) { root.setProperty('--ar-cotton', `url("${s.paperTex}")`); root.setProperty('--ar-cs', '360px auto'); }
+        else root.removeProperty('--ar-cotton');
+        if (pp[2] !== 'upload' || !s.paperTex) root.removeProperty('--ar-cs');
+        wall();
         dress();
     }
 
@@ -525,7 +460,7 @@
         const root = doc.documentElement.style;
         for (const [v] of VARS) root.removeProperty(v);
         for (const [v] of IMAGES) root.removeProperty(v);
-        for (const v of ['--ar-cn', '--ar-tw', '--ar-addr', '--ar-nextno']) root.removeProperty(v);
+        for (const v of ['--ar-cn', '--ar-tw', '--ar-addr', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-wall']) root.removeProperty(v);
         for (const [, cls] of LAYOUTS) if (cls) body.classList.remove(cls);
         body.classList.remove('ar-bg-st');
         undress();
@@ -570,6 +505,10 @@
                 <div class="ar-save"><input type="text" maxlength="12" placeholder="给现在这套配色起个名字"><button class="ar-btn" data-savescheme>存成方案</button></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
             </section>
+            <section><h4>纸纹</h4>
+                <div class="ar-papers">${PAPERS.map(([n], i) => `<button data-paper="${i}"><i class="p${i}"></i><em>${n}</em></button>`).join('')}</div>
+                <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（会铺满每张纸，浅色的图最好）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
+            </section>
             <section><h4>版式</h4>
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><i class="l${i}"></i><em>${n}</em></button>`).join('')}</div>
             </section>
@@ -599,6 +538,7 @@
             for (const inp of p.querySelectorAll('input[type=color]')) inp.value = hex(current(inp.dataset.v));
             for (const sel of p.querySelectorAll('select')) sel.value = String(store()?.[sel.dataset.f] ?? 0);
             for (const b of p.querySelectorAll('[data-lay]')) b.classList.toggle('on', Number(b.dataset.lay) === (store()?.lay ?? 0));
+            for (const b of p.querySelectorAll('[data-paper]')) b.classList.toggle('on', Number(b.dataset.paper) === (store()?.paper ?? 0));
             for (const inp of p.querySelectorAll('[data-t]')) inp.value = text(inp.dataset.t);
             const bg = p.querySelector('[data-bgst]');
             if (bg) bg.checked = !!store()?.bgST;
@@ -633,12 +573,19 @@
             }
             if (e.target.type === 'file' && e.target.files?.[0]) {
                 const key = e.target.closest('.ar-img').dataset.k;
-                const max = IMAGES.find((x) => x[1] === key)[3];
-                st.images ??= {};
-                st.images[key] = await shrink(e.target.files[0], max);
+                if (key === 'paperTex') {
+                    // 自己的纸纹：存下来并直接换成「自己上传」
+                    st.paperTex = await shrink(e.target.files[0], 720);
+                    st.paper = PAPERS.findIndex((x) => x[2] === 'upload');
+                } else {
+                    const max = IMAGES.find((x) => x[1] === key)[3];
+                    st.images ??= {};
+                    st.images[key] = await shrink(e.target.files[0], max);
+                }
                 e.target.value = '';
                 applyStyle();
                 save();
+                p.syncInputs?.();
             }
         });
         p.addEventListener('click', (e) => {
@@ -662,11 +609,15 @@
                 inp.value = '';
             } else if (b.dataset.lay !== undefined) {
                 st.lay = Number(b.dataset.lay);
+            } else if (b.dataset.paper !== undefined) {
+                st.paper = Number(b.dataset.paper);
+                // 选了「自己上传」但还没传过图：直接弹出选图
+                if (PAPERS[st.paper][2] === 'upload' && !st.paperTex) p.querySelector('[data-k="paperTex"] input')?.click();
             } else if (b.dataset.reset) {
                 if (st.images) delete st.images[b.dataset.reset];
             } else if (b.dataset.all !== undefined) {
                 // 自己存的配色方案留着，别的都回到默认
-                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.bgST; delete st.texts;
+                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.bgST; delete st.texts; delete st.paper;
             } else return;
             applyStyle();
             save();
