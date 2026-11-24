@@ -101,8 +101,16 @@
             el.addEventListener('click', act);
             sides.append(el);
         }
-        sheld.append(sides);
-        // 夹子：从左边夹住整叠纸；垫在纸下面的波点纸（上沿一道蕾丝）。样子都在主题里
+        // 手机上侧签压在消息纸下面只露一条边：手指一碰（或点了它）就浮到纸上面来，过一会儿自己落回去
+        let upTimer = 0;
+        const up = () => {
+            sides.classList.add('up');
+            clearTimeout(upTimer);
+            upTimer = setTimeout(() => sides.classList.remove('up'), 2800);
+        };
+        sides.addEventListener('pointerdown', up, true);
+        sides.addEventListener('click', up, true);
+        // 夹子：从左边夹住整叠纸；垫在纸下面的波点纸（上面盖一张硫酸纸）。样子都在主题里
         const clip = doc.createElement('div');
         clip.id = 'ar-clip';
         sheld.append(clip);
@@ -110,6 +118,8 @@
         under.id = 'ar-under';
         // 放在 #sheld 最前面（三枚签后面）：不依赖 #chat 一定是 #sheld 的直接子元素
         sheld.insertBefore(under, tabs.nextSibling);
+        // 侧签排在垫纸后面、#chat 前面：手机上它和消息纸同一层，靠这个顺序被纸盖住
+        sheld.insertBefore(sides, under.nextSibling);
         fill();
         applyStyle();
     }
@@ -168,6 +178,9 @@
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
         for (const f of doc.querySelectorAll('.ar-folio')) f.remove();
+        doc.documentElement.style.removeProperty('--ar-top');
+        if (themeColor0 !== null) doc.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor0);
+        topKey = '';
         doc.getElementById('ar-fonts-cn')?.remove();
         doc.getElementById('ar-fonts')?.remove();
         doc.getElementById('ar-style')?.remove();
@@ -192,6 +205,7 @@
             dress();
             folio();
             wall();
+            topColor();
             letters();
         } else if (body.classList.contains('ar-tab')) {
             unmount();
@@ -267,6 +281,51 @@
         else root.removeProperty('--ar-wall');
     }
 
+    // 手机状态栏那一条（时间、电量后面）：网页在浏览器里没法把图片画到那里，那一条只跟着页面的底色走。
+    // 所以取壁纸最上面一条的平均色当底色（--ar-top），看起来就是壁纸一直铺上去；同时写进 theme-color。
+    // 另外加一个 meta：以后「添加到主屏幕」打开时，页面真的能铺到状态栏底下，那时候就是壁纸本身了
+    let topKey = '', themeColor0 = null;
+    function topColor() {
+        const root = doc.documentElement;
+        const m = getComputedStyle(root).backgroundImage.match(/url\(["']?(.*?)["']?\)/);
+        const key = `${m?.[1]?.slice(0, 200) ?? ''}|${m?.[1]?.length ?? 0}|${innerWidth}x${innerHeight}`;
+        if (key === topKey) return;
+        topKey = key;
+        const meta = doc.querySelector('meta[name="theme-color"]');
+        if (meta && themeColor0 === null) themeColor0 = meta.getAttribute('content');
+        if (!doc.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')) {
+            const sb = doc.createElement('meta');
+            sb.name = 'apple-mobile-web-app-status-bar-style';
+            sb.content = 'black-translucent';
+            doc.head.append(sb);
+        }
+        if (!m) { root.style.removeProperty('--ar-top'); return; }
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            try {
+                // 和 html 的背景一样的裁法：cover，横向 30%、纵向 50%
+                const sc = Math.max(innerWidth / img.width, innerHeight / img.height);
+                const cw = innerWidth / sc, chh = innerHeight / sc;
+                const sx = (img.width - cw) * .3, sy = (img.height - chh) * .5;
+                const cv = doc.createElement('canvas');
+                cv.width = 16; cv.height = 4;
+                const g = cv.getContext('2d');
+                g.drawImage(img, sx, sy, cw, Math.max(1, chh * .05), 0, 0, 16, 4);
+                const px = g.getImageData(0, 0, 16, 4).data;
+                let r = 0, gg = 0, b = 0;
+                for (let i = 0; i < px.length; i += 4) { r += px[i]; gg += px[i + 1]; b += px[i + 2]; }
+                const n = px.length / 4;
+                const col = `rgb(${Math.round(r / n)}, ${Math.round(gg / n)}, ${Math.round(b / n)})`;
+                if (topKey !== key) return;
+                root.style.setProperty('--ar-top', col);
+                meta?.setAttribute('content', col);
+            } catch { root.style.removeProperty('--ar-top'); }
+        };
+        img.onerror = () => root.style.removeProperty('--ar-top');
+        img.src = m[1];
+    }
+
     // ── 角色抽屉的索引：按名字排序时，每组第一个角色左边写拼音首字母（主题用 data-ar-l 显示） ──
     // 汉字的首字母：和每个字母的第一个汉字比大小（浏览器自带的拼音排序规则）
     const PY_LETTERS = 'ABCDEFGHJKLMNOPQRSTWXYZ';
@@ -305,6 +364,8 @@
     const VARS = [
         ['--ar-paper', '纸（消息、抽屉、弹窗）'], ['--ar-ink', '字'], ['--ar-mute', '旁白（灰字）'], ['--ar-accent', '文件夹和签'],
         ['--ar-accent-ink', '签上的字'], ['--ar-hi', '强调（加粗的字）'], ['--ar-desk', '台面（壁纸没盖住的地方）'],
+        // 这两个自带的配色方案里没有：不调就跟着纸色和字色走
+        ['--ar-underc', '垫纸（最下面那张）'], ['--ar-dotc', '垫纸上的波点'],
     ];
     const PRESETS = [
         ['冷白灰蓝', ['#FCFCFB', '#1D1D1C', '#8f8d88', '#70899A', '#FFFFFF', '#4E6A7D', '#DADBDC']],
@@ -334,7 +395,14 @@
         ['横线', 'repeating-linear-gradient(transparent 0 27px, rgba(29, 29, 28, .08) 27px 27.6px)', ''],
         ['素白', '', 'none'],
         ['自己上传', '', 'upload'],
+        // 后加的排在最后（存的是序号，前面的不能动）；style 卡里按 PAPER_ORDER 排
+        ['书纸', '', '--ar-book'],
+        ['布纹信纸', '', '--ar-linen', '190px 190px'],
     ];
+    const PAPER_ORDER = [0, 6, 7, 1, 2, 3, 4, 5];
+    // 每种版式默认配的纸：图录页 棉纸、刊物 书纸、信 布纹信纸；在哪种版式下选的纸只记给那种版式
+    const PAPER_DEF = [0, 6, 7];
+    const paperOf = (s) => s?.papers?.[s.lay ?? 0] ?? PAPER_DEF[s?.lay ?? 0] ?? 0;
     // 每张纸的版式：名字、body 上的 class
     const LAYOUTS = [
         ['图录页', ''],
@@ -351,15 +419,15 @@
     // 自己上传的纸纹单独存（不在「图片」那一栏里，在「纸纹」那一栏）
     // 可以改的几行字：键、说明、默认值、是不是多行
     const TEXTS = [
-        ['title', '刊物的标题（{n} 是英文数字，{no} 是阿拉伯数字）', 'Page {n}', false],
-        ['addr', '角色来信的地址', '19 Rue des Archives, 75004 Paris', false],
-        ['addr2', '你回信的地址', '7 Rue Barbette, 75003 Paris', false],
-        ['dear', '信的称呼（{name} 是对方的名字）', 'Dear {name},', false],
-        ['open1', '角色来信的开场白', '在我所感与我所写之间，永远横亘着一道无法跨越的距离。所以如果这封信显得有些笨拙，请原谅。', true],
-        ['close1', '角色来信的落款', 'Nothing new...\nEver yours,', true],
-        ['open2', '你回信的开场白', '我想作诗，写雨，写夜的相思，写你，写不出。', true],
-        ['close2', '你回信的落款', 'Yours ever, fair Star,', true],
-        ['idle', '输入框收起时的那一句', '从前的日色变得慢，车，马，邮件都慢', false],
+        ['title', '刊物的标题（{n} 是英文数字，{no} 是阿拉伯数字）', 'Page {n}', false, 1],
+        ['addr', '角色来信的地址', '19 Rue des Archives, 75004 Paris', false, 2],
+        ['addr2', '你回信的地址', '7 Rue Barbette, 75003 Paris', false, 2],
+        ['dear', '信的称呼（{name} 是对方的名字）', 'Dear {name},', false, 2],
+        ['open1', '角色来信的开场白', '在我所感与我所写之间，永远横亘着一道无法跨越的距离。所以如果这封信显得有些笨拙，请原谅。', true, 2],
+        ['close1', '角色来信的落款', 'Nothing new...\nEver yours,', true, 2],
+        ['open2', '你回信的开场白', '我想作诗，写雨，写夜的相思，写你，写不出。', true, 2],
+        ['close2', '你回信的落款', 'Yours ever, fair Star,', true, 2],
+        ['idle', '输入框收起时的那一句', '从前的日色变得慢，车，马，邮件都慢', false, -1],
     ];
 
     const store = () => {
@@ -375,6 +443,11 @@
         }
         // 0.10.1：信头地址的默认值从 Private Archive 换成真的地址，旧的默认值别留着
         if (s.texts?.addr === 'Private Archive') delete s.texts.addr;
+        // 0.11：纸纹改成每种版式各记各的。旧的那一个选择：是「自己上传」就留给现在的版式，别的不留（三种版式各用新的默认纸）
+        if (s.paper !== undefined) {
+            if (s.paper === 5) { s.papers ??= {}; s.papers[s.lay ?? 0] ??= 5; }
+            delete s.paper;
+        }
         return s;
     };
     const save = () => ctx()?.saveSettingsDebounced?.();
@@ -419,7 +492,11 @@
         }
         return d;
     }
-    const PROPS = ['--ar-no', '--ar-date', '--ar-time', '--ar-stamp', '--ar-datel', '--ar-sheet', '--ar-title', '--ar-dear', '--ar-open', '--ar-close', '--ar-name', '--ar-addr', '--ar-pic'];
+    const PROPS = ['--ar-no', '--ar-date', '--ar-time', '--ar-stamp', '--ar-datel', '--ar-sheet', '--ar-title', '--ar-dear', '--ar-open', '--ar-close', '--ar-name', '--ar-addr', '--ar-datecn', '--ar-pic'];
+    // 二〇二六年十一月二十四日
+    const CN = '〇一二三四五六七八九';
+    const cnNum = (n) => (n < 10 ? CN[n] : n === 10 ? '十' : n < 20 ? '十' + CN[n - 10] : CN[Math.floor(n / 10)] + '十' + (n % 10 ? CN[n % 10] : ''));
+    const cnDate = (d) => `${[...String(d.getFullYear())].map((x) => CN[+x]).join('')}年${cnNum(d.getMonth() + 1)}月${cnNum(d.getDate())}日`;
     function dress() {
         if (!body.classList.contains('ar-tab')) return;
         const c = ctx();
@@ -449,6 +526,7 @@
                 q(user ? t.close2 : t.close1),
                 q(el.getAttribute('ch_name') || ''),
                 q(user ? t.addr2 : t.addr),
+                q(d ? `${cnDate(d)}\u3000${time}` : ''),
                 img?.getAttribute('src') ? `url("${fullPic(img.getAttribute('src'))}")` : 'none',
             ];
             const sig = v.join('|');
@@ -479,11 +557,20 @@
                 el.appendChild(f);
             }
             f.dataset.sig = sig;
-            const from = Math.max(0, Math.min(si - 2, sw - 5));
-            const to = Math.min(sw - 1, from + 4);
             const n2 = (n) => String(n).padStart(2, '0');
+            let list = [];
+            if (sw <= 7) list = Array.from({ length: sw }, (_, i) => i);
+            else {
+                // 首、尾、现在这一稿和它前后各一稿；不相邻的地方放一个 -1（画成「…」）
+                const keep = [...new Set([0, si - 1, si, si + 1, sw - 1])].filter((i) => i >= 0 && i < sw).sort((a, b) => a - b);
+                keep.forEach((i, k) => { if (k && i - keep[k - 1] > 1) list.push(-1); list.push(i); });
+            }
             let h = '';
-            for (let i = from; i <= to; i++) h += `<button type="button" data-i="${i}"${i === si ? ' class="on" aria-current="page"' : ''}>${n2(i + 1)}</button>`;
+            for (const i of list) {
+                h += i < 0
+                    ? '<button type="button" class="gap" data-jump title="全部稿">…</button>'
+                    : `<button type="button" data-i="${i}"${i === si ? ' class="on" aria-current="page"' : ''}>${n2(i + 1)}</button>`;
+            }
             if (more) h += `<button type="button" class="new" data-i="${sw}">${n2(sw + 1)}</button>`;
             f.innerHTML = h;
         }
@@ -498,6 +585,17 @@
         const m = c?.chat?.[Number(el?.getAttribute('mesid'))];
         if (!m) return;
         const cur = m.swipe_id ?? 0;
+        if (b.dataset.jump !== undefined) {
+            // 酒馆自己的「全部稿」：列出每一稿的开头，点哪个跳哪个。老版本没有的话，问一个数字
+            const pick = el.querySelector('.mes_swipe_picker');
+            if (pick) { pick.click(); return; }
+            const total = m.swipes?.length ?? 1;
+            Promise.resolve(c.callGenericPopup?.(`跳到第几稿？（1–${total}）`, c.POPUP_TYPE?.INPUT ?? 3, String(cur + 1))).then((v) => {
+                const k = Math.round(Number(v)) - 1;
+                if (Number.isFinite(k) && k >= 0 && k < total && k !== cur) c.swipe?.to?.(null, k > cur ? 'right' : 'left', { forceSwipeId: k, source: 'swipe_picker' });
+            });
+            return;
+        }
         const n = Number(b.dataset.i);
         if (n === cur) return;
         const dir = n > cur ? 'right' : 'left';
@@ -538,9 +636,10 @@
         body.classList.toggle('ar-bg-st', !!s.bgST);
         root.setProperty('--ar-idle', q(text('idle')));
         // 纸纹
-        const pp = PAPERS[s.paper ?? 0] ?? PAPERS[0];
+        const pp = PAPERS[paperOf(s)] ?? PAPERS[0];
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
+        else if (pp[2].startsWith('--')) root.setProperty('--ar-cotton', `var(${pp[2]})`);
         else if (pp[2] === 'upload' && s.paperTex) {
             // 自己上传的纸纹：宽度对齐每张纸（只会缩小、不会放大，所以不糊）；
             // 纸比图长的部分，接这张图上下翻过来的样子，接缝是对称的，看不出断开
@@ -555,11 +654,13 @@
             root.setProperty('--ar-cr', 'repeat-y');
             paperTile(src, k).then((u) => {
                 const now = store() ?? {};
-                if (now.paperTex === src && (now.texK ?? 100) / 100 === (s.texK ?? 100) / 100 && (PAPERS[now.paper ?? 0] ?? PAPERS[0])[2] === 'upload') root.setProperty('--ar-cotton', `url("${u}")`);
+                if (now.paperTex === src && (now.texK ?? 100) / 100 === (s.texK ?? 100) / 100 && (PAPERS[paperOf(now)] ?? PAPERS[0])[2] === 'upload') root.setProperty('--ar-cotton', `url("${u}")`);
             });
         }
         else root.removeProperty('--ar-cotton');
         if (pp[2] !== 'upload' || !s.paperTex) for (const v of ['--ar-cs', '--ar-pp', '--ar-cr']) root.removeProperty(v);
+        // 有的纸纹要铺得比棉纸细（布纹的织纹）
+        if (pp[3]) root.setProperty('--ar-cs', pp[3]);
         wall();
         dress();
     }
@@ -636,12 +737,26 @@
         });
     }
 
-    const current = (v) => getComputedStyle(doc.documentElement).getPropertyValue(v).trim();
+    // 变量现在的颜色：有的是 color-mix() 算出来的，让浏览器算成真正的颜色再读
+    const current = (v) => {
+        const pr = doc.createElement('i');
+        pr.style.cssText = `display:none;color:var(${v})`;
+        body.append(pr);
+        const c = getComputedStyle(pr).color;
+        pr.remove();
+        return c;
+    };
     const hex = (c) => {
         // color input 只认 #rrggbb
-        const m = c.match(/^#([0-9a-f]{3})$/i);
+        const h2 = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+        let m = c.match(/^#([0-9a-f]{3})$/i);
         if (m) return '#' + [...m[1]].map((x) => x + x).join('');
-        return /^#[0-9a-f]{6}$/i.test(c) ? c : '#000000';
+        if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+        m = c.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+        if (m) return '#' + h2(+m[1]) + h2(+m[2]) + h2(+m[3]);
+        m = c.match(/^color\(srgb\s+([\d.e-]+)\s+([\d.e-]+)\s+([\d.e-]+)/i);
+        if (m) return '#' + h2(m[1] * 255) + h2(m[2] * 255) + h2(m[3] * 255);
+        return '#000000';
     };
     const swatch = (colors) => `<span>${colors.slice(0, 4).map((x) => `<i style="background:${esc(x)}"></i>`).join('')}</span>`;
 
@@ -658,7 +773,7 @@
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
             </section>
             <section><h4>纸纹</h4>
-                <div class="ar-papers">${PAPERS.map(([n], i) => `<button data-paper="${i}"><i class="p${i}"></i><em>${n}</em></button>`).join('')}</div>
+                <div class="ar-papers">${PAPER_ORDER.map((i) => `<button data-paper="${i}"><i class="p${i}"></i><em>${PAPERS[i][0]}</em></button>`).join('')}</div>
                 <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（越大越清楚）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
                 <label class="ar-row ar-texk"><span>纸纹浓淡</span><input type="range" min="5" max="100" step="5" data-texk></label>
             </section>
@@ -666,7 +781,7 @@
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><i class="l${i}"></i><em>${n}</em></button>`).join('')}</div>
             </section>
             <section><h4>文字</h4>
-                ${TEXTS.map(([k, n, , multi]) => `<label class="ar-text"><span>${n}</span>${multi ? `<textarea rows="2" data-t="${k}"></textarea>` : `<input type="text" data-t="${k}">`}</label>`).join('')}
+                ${TEXTS.map(([k, n, , multi, lay]) => `<label class="ar-text" data-lay-only="${lay}"><span>${n}</span>${multi ? `<textarea rows="2" data-t="${k}"></textarea>` : `<input type="text" data-t="${k}">`}</label>`).join('')}
             </section>
             <section><h4>图片</h4>
                 <label class="ar-row ar-check"><input type="checkbox" data-bgst><span>底图用酒馆自己的背景</span></label>
@@ -691,10 +806,14 @@
             for (const inp of p.querySelectorAll('input[type=color]')) inp.value = hex(current(inp.dataset.v));
             for (const sel of p.querySelectorAll('select')) sel.value = String(store()?.[sel.dataset.f] ?? 0);
             for (const b of p.querySelectorAll('[data-lay]')) b.classList.toggle('on', Number(b.dataset.lay) === (store()?.lay ?? 0));
-            for (const b of p.querySelectorAll('[data-paper]')) b.classList.toggle('on', Number(b.dataset.paper) === (store()?.paper ?? 0));
+            for (const b of p.querySelectorAll('[data-paper]')) b.classList.toggle('on', Number(b.dataset.paper) === paperOf(store()));
             for (const inp of p.querySelectorAll('[data-t]')) inp.value = text(inp.dataset.t);
             const bg = p.querySelector('[data-bgst]');
             if (bg) bg.checked = !!store()?.bgST;
+            for (const row of p.querySelectorAll('[data-lay-only]')) {
+                const l = Number(row.dataset.layOnly);
+                row.hidden = l !== -1 && l !== (store()?.lay ?? 0);
+            }
             const tk = p.querySelector('[data-texk]');
             if (tk) { tk.value = String(store()?.texK ?? 100); tk.closest('.ar-texk').hidden = !store()?.paperTex; }
         };
@@ -741,7 +860,8 @@
                     // 纸纹要清楚：最长边留到 2400（手机屏是两三倍像素，1400 不够），原图小就不动
                     st.paperTex = await shrink(e.target.files[0], 2400, 0.9);
                     delete st.texK;
-                    st.paper = PAPERS.findIndex((x) => x[2] === 'upload');
+                    st.papers ??= {};
+                    st.papers[st.lay ?? 0] = PAPERS.findIndex((x) => x[2] === 'upload');
                 } else {
                     const max = IMAGES.find((x) => x[1] === key)[3];
                     st.images ??= {};
@@ -761,7 +881,7 @@
             if (b.dataset.del !== undefined) {
                 st.schemes?.splice(Number(b.dataset.del), 1);
             } else if (b.dataset.p !== undefined) {
-                st.colors = Object.fromEntries(VARS.map(([v], i) => [v, PRESETS[b.dataset.p][1][i]]));
+                st.colors = Object.fromEntries(VARS.map(([v], i) => [v, PRESETS[b.dataset.p][1][i]]).filter(([, c]) => c));
             } else if (b.dataset.sp !== undefined) {
                 const sc = st.schemes?.[Number(b.dataset.sp)];
                 if (sc) st.colors = { ...sc.colors };
@@ -775,14 +895,15 @@
             } else if (b.dataset.lay !== undefined) {
                 st.lay = Number(b.dataset.lay);
             } else if (b.dataset.paper !== undefined) {
-                st.paper = Number(b.dataset.paper);
+                st.papers ??= {};
+                st.papers[st.lay ?? 0] = Number(b.dataset.paper);
                 // 选了「自己上传」但还没传过图：直接弹出选图
-                if (PAPERS[st.paper][2] === 'upload' && !st.paperTex) p.querySelector('[data-k="paperTex"] input')?.click();
+                if (PAPERS[paperOf(st)][2] === 'upload' && !st.paperTex) p.querySelector('[data-k="paperTex"] input')?.click();
             } else if (b.dataset.reset) {
                 if (st.images) delete st.images[b.dataset.reset];
             } else if (b.dataset.all !== undefined) {
                 // 自己存的配色方案留着，别的都回到默认
-                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.bgST; delete st.texts; delete st.paper; delete st.texK;
+                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.bgST; delete st.texts; delete st.papers; delete st.texK;
             } else return;
             applyStyle();
             save();
