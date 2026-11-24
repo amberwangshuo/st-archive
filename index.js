@@ -519,11 +519,7 @@
         }
         return d;
     }
-    const PROPS = ['--ar-no', '--ar-date', '--ar-time', '--ar-stamp', '--ar-datel', '--ar-sheet', '--ar-title', '--ar-dear', '--ar-open', '--ar-close', '--ar-name', '--ar-addr', '--ar-datecn', '--ar-pic'];
-    // 二〇二六年十一月二十四日
-    const CN = '〇一二三四五六七八九';
-    const cnNum = (n) => (n < 10 ? CN[n] : n === 10 ? '十' : n < 20 ? '十' + CN[n - 10] : CN[Math.floor(n / 10)] + '十' + (n % 10 ? CN[n % 10] : ''));
-    const cnDate = (d) => `${[...String(d.getFullYear())].map((x) => CN[+x]).join('')}年${cnNum(d.getMonth() + 1)}月${cnNum(d.getDate())}日`;
+    const PROPS = ['--ar-no', '--ar-date', '--ar-time', '--ar-stamp', '--ar-datel', '--ar-sheet', '--ar-title', '--ar-dear', '--ar-open', '--ar-close', '--ar-name', '--ar-addr', '--ar-pic'];
     function dress() {
         if (!body.classList.contains('ar-tab')) return;
         const c = ctx();
@@ -553,7 +549,6 @@
                 q(user ? t.close2 : t.close1),
                 q(el.getAttribute('ch_name') || ''),
                 q(user ? t.addr2 : t.addr),
-                q(d ? `${cnDate(d)}\u3000${time}` : ''),
                 img?.getAttribute('src') ? `url("${fullPic(img.getAttribute('src'))}")` : 'none',
             ];
             const sig = v.join('|');
@@ -607,7 +602,7 @@
     const showFolio = (f) => {
         f.classList.add('show');
         clearTimeout(folioTimers.get(f));
-        folioTimers.set(f, setTimeout(() => f.classList.remove('show'), 5000));
+        folioTimers.set(f, setTimeout(() => f.classList.remove('show'), 8000));
     };
     doc.addEventListener('click', (e) => {
         const f = e.target.closest?.('.ar-folio');
