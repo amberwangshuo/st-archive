@@ -178,7 +178,7 @@
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
         for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-exq, .ar-fs')) f.remove();
-        reading(null);
+        body.classList.remove('ar-immersive');
         texFixed = false;
         clearFixTex();
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
@@ -202,7 +202,7 @@
     function sync() {
         if (themeOn()) {
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            doc.documentElement.dataset.arPv = '17';
+            doc.documentElement.dataset.arPv = '18';
             mount();
             body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
@@ -407,6 +407,7 @@
         ['霞鹜文楷', '"LXGW WenKai", "Kaiti SC", "KaiTi", serif', 'https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css'],
         ['系统字体', 'system-ui, "PingFang SC", "Microsoft YaHei", sans-serif', ''],
     ];
+    const fontKeys = {};
     const TW_FONTS = [
         ['Courier Prime', '"Courier Prime", "KingHwaOldSong", "Courier New", monospace', ''],
         ['Special Elite', '"Special Elite", "KingHwaOldSong", "Courier New", monospace', 'https://fonts.loli.net/css2?family=Special+Elite&display=swap'],
@@ -474,6 +475,8 @@
         }
         // 0.10.1：信头地址的默认值从 Private Archive 换成真的地址，旧的默认值别留着
         if (s.texts?.addr === 'Private Archive') delete s.texts.addr;
+        // 0.18：纸纹库。以前只存一张 paperTex：把它放进库里
+        if (s.paperTex && !(s.texLib ?? []).includes(s.paperTex)) s.texLib = [s.paperTex, ...(s.texLib ?? [])];
         // 0.13：刊物标题的默认值从「Page {n}」换成「无题」（她说 Page Zero 绝对不可以），旧的默认值别留着
         if (s.texts?.title === 'Page {n}') delete s.texts.title;
         // 0.15.3：答卷的考试名称默认从「语文周测」换成模考，旧的默认值别留着
@@ -761,6 +764,7 @@
             <div class="ph"><i></i><span class="lb">${p2(d.getDate())} . ${p2(d.getMonth() + 1)} . ${d.getFullYear()}</span></div>
         </div>`;
         el.addEventListener('click', (e) => {
+            if (e.target.closest('.bk')) return;
             const ph = e.target.closest('.ph');
             if (ph) { ph.classList.toggle('zoom'); return; }
             if (el.querySelector('.ph.zoom')) { el.querySelector('.ph.zoom').classList.remove('zoom'); return; }
@@ -771,14 +775,134 @@
         doc.documentElement.append(el);
     }
 
-    // ── 全屏读一张：每张纸右上角一个记号（两个对角），点了这一张单独拿出来铺在桌上；点桌面、按 Esc 或再点记号放回去 ──
-    function reading(el) {
-        const cur = doc.querySelector('#chat > .mes.ar-full');
-        cur?.classList.remove('ar-full');
-        if (!el || el === cur) { body.classList.remove('ar-reading'); return; }
-        el.classList.add('ar-full');
-        el.scrollTop = 0;
-        body.classList.add('ar-reading');
+    // ── 双击原地修改：卷头、标题、题记、称呼、开场白、落款、地址、输入框那一句，在纸上双击就地改；
+    //    图片（氛围图、封面上的照片、桌面、输入标签下面晕开的图）双击就换一张。改完和在 style 卡里改是同一份设置 ──
+    const TEXT_NAME = Object.fromEntries(TEXTS.map(([k, n]) => [k, n.replace(/（.*$/, '')]));
+    function editTarget(t, x, y) {
+        const lay = (LAYOUTS[store()?.lay ?? 0] ?? LAYOUTS[0])[1];
+        const mes = t.closest?.('#chat > .mes');
+        const user = mes?.getAttribute('is_user') === 'true';
+        const r = (el) => el?.getBoundingClientRect();
+        // 封面
+        if (t.closest?.('#ar-cover .ph')) return { img: 'photo' };
+        if (t.closest?.('#ar-cover .bk1')) return { img: 'cv1' };
+        if (t.closest?.('#ar-cover .bk2')) return { img: 'cv2' };
+        // 输入框收着时中间那一句；打开时晕开的那张图
+        if (t.closest?.('#send_form') && !t.closest('textarea, button, .menu_button, .fa-solid, #ar-tools')) {
+            const open = body.classList.contains('ar-memo') || !empty();
+            return open ? { img: 'wash' } : { text: 'idle' };
+        }
+        // 桌面（纸外面露出来的壁纸）
+        if (t === doc.documentElement || t === body || t.id === 'bg1' || t.id === 'bg_custom' || t.id === 'sheld') return { img: 'desk' };
+        if (!mes) return null;
+        if (t.closest('.ar-scratch .hd b')) return { text: 'exam' };
+        if (lay === 'ar-lay-b') {
+            const av = mes.querySelector('.mesAvatarWrapper');
+            if (t.closest('.mesAvatarWrapper') && x > (r(av.querySelector('.avatar'))?.right ?? 1e9)) return { img: user ? 'mood2' : 'mood1' };
+            if (t.closest('.mes_reasoning_header')) return { text: 'title' };
+            const nm = r(mes.querySelector('.ch_name'));
+            if (t.classList.contains('mes_block') && nm && y < nm.top) return { text: 'title' };
+            const txt = mes.querySelector('.mes_text');
+            const first = r(txt?.firstElementChild);
+            if (t === txt && first && y < first.top) return { text: 'epi' };
+        }
+        if (lay === 'ar-lay-c') {
+            const av = r(mes.querySelector('.mesAvatarWrapper .avatar'));
+            if (t.closest('.mesAvatarWrapper') && av) {
+                if (x < av.left) return { img: user ? 'mood2' : 'mood1' };
+                if (x > av.right) return { img: user ? 'mood1' : 'mood2' };
+            }
+            if (t.classList.contains('name_text')) {
+                const fs = parseFloat(getComputedStyle(t).fontSize) || 14;
+                if (y > r(t).top + fs * 1.1) return { text: user ? 'addr2' : 'addr' };
+            }
+            if (t.closest('.mes_reasoning_header')) return { text: 'dear' };
+            const nt = r(mes.querySelector('.name_text'));
+            if (t.classList.contains('ch_name') && nt && y > nt.bottom + 6) return { text: 'dear' };
+            const txt = mes.querySelector('.mes_text');
+            const tr = r(txt);
+            if (t.classList.contains('mes_block') && tr) {
+                if (y < tr.top) return { text: user ? 'open2' : 'open1' };
+            }
+            const last = r(txt?.lastElementChild);
+            if (t === txt && last && y > last.bottom) return { text: user ? 'close2' : 'close1' };
+        }
+        return null;
+    }
+    function editText(key, x, y) {
+        doc.getElementById('ar-edit')?.remove();
+        const multi = TEXTS.find((t) => t[0] === key)?.[3];
+        const box = doc.createElement('div');
+        box.id = 'ar-edit';
+        box.innerHTML = `<small>${esc(TEXT_NAME[key] ?? '')}</small>${multi ? '<textarea rows="3"></textarea>' : '<input type="text">'}<span><button data-a="0">作罢</button><button data-a="1">定稿</button></span>`;
+        const inp = box.querySelector('textarea, input');
+        inp.value = text(key);
+        doc.documentElement.append(box);
+        const W = innerWidth, H = innerHeight;
+        const bw = Math.min(360, W - 24);
+        box.style.width = `${bw}px`;
+        box.style.left = `${Math.max(12, Math.min(W - bw - 12, x - bw / 2))}px`;
+        box.style.top = `${Math.max(12, Math.min(H - 170, y + 14))}px`;
+        inp.focus();
+        inp.select?.();
+        const done = (ok) => {
+            if (ok) {
+                const st = store();
+                st.texts ??= {};
+                st.texts[key] = inp.value;
+                applyStyle();
+                dress();
+                scratch();
+                save();
+                stylePanel.sync?.();
+            }
+            box.remove();
+        };
+        box.addEventListener('click', (e) => { const a = e.target.closest('button')?.dataset.a; if (a !== undefined) done(a === '1'); });
+        inp.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') done(false);
+            if (e.key === 'Enter' && (!multi || e.ctrlKey || e.metaKey)) { e.preventDefault(); done(true); }
+        });
+    }
+    function editImage(key) {
+        const inp = doc.createElement('input');
+        inp.type = 'file';
+        inp.accept = 'image/*';
+        inp.addEventListener('change', async () => {
+            const f = inp.files?.[0];
+            if (!f) return;
+            const max = IMAGES.find((x) => x[1] === key)?.[3] ?? 1200;
+            const st = store();
+            st.images ??= {};
+            st.images[key] = await shrink(f, max);
+            applyStyle();
+            save();
+        });
+        inp.click();
+    }
+    doc.addEventListener('dblclick', (e) => {
+        if (!body.classList.contains('ar-tab')) return;
+        if (e.target.closest?.('#ar-edit, #ar-style, textarea, input, .mes_text p, .mes_text li')) return;
+        const hit = editTarget(e.target, e.clientX, e.clientY);
+        if (!hit) return;
+        e.preventDefault();
+        e.stopPropagation();
+        doc.getSelection?.()?.removeAllRanges();
+        if (hit.text) editText(hit.text, e.clientX, e.clientY);
+        else if (hit.img) editImage(hit.img);
+    }, true);
+
+    // ── 全屏：整个聊天界面铺满屏幕——文件夹、签、夹子、垫纸、顶栏都收起来，只剩一叠消息纸和输入框，桌面是壁纸。
+    //    每张纸右上角的记号（两个对角）进出；电脑和安卓同时让浏览器本身全屏，iPhone 不支持浏览器全屏，就只铺满页面。Esc 也能退出 ──
+    function immersive(on) {
+        on = on ?? !body.classList.contains('ar-immersive');
+        body.classList.toggle('ar-immersive', on);
+        const de = doc.documentElement;
+        try {
+            if (on && !doc.fullscreenElement && de.requestFullscreen) de.requestFullscreen().catch(() => {});
+            if (!on && doc.fullscreenElement && doc.exitFullscreen) doc.exitFullscreen().catch(() => {});
+        } catch { /* 有的浏览器没有全屏接口，只铺满页面 */ }
+        setTimeout(() => fixTex(true), 60);
     }
     function fsMarks() {
         for (const el of doc.querySelectorAll('#chat > .mes[mesid] .mes_buttons')) {
@@ -793,15 +917,11 @@
     doc.addEventListener('click', (e) => {
         if (!body.classList.contains('ar-tab')) return;
         const b = e.target.closest?.('.ar-fs');
-        if (b) { e.preventDefault(); e.stopPropagation(); reading(b.closest('.mes')); return; }
-        // 全屏时点到纸外面（桌面）就放回去
-        if (body.classList.contains('ar-reading') && e.target.closest?.('#chat') && !e.target.closest('.mes.ar-full')) {
-            e.preventDefault();
-            e.stopPropagation();
-            reading(null);
-        }
+        if (b) { e.preventDefault(); e.stopPropagation(); immersive(); }
     }, true);
-    doc.addEventListener('keydown', (e) => { if (e.key === 'Escape' && body.classList.contains('ar-reading')) reading(null); });
+    doc.addEventListener('keydown', (e) => { if (e.key === 'Escape' && body.classList.contains('ar-immersive') && !doc.fullscreenElement) immersive(false); });
+    // 浏览器自己退出全屏（按 Esc、手势）时，界面也跟着退出
+    doc.addEventListener('fullscreenchange', () => { if (!doc.fullscreenElement && body.classList.contains('ar-immersive')) body.classList.remove('ar-immersive'); });
 
     function undress() {
         for (const el of doc.querySelectorAll('#chat > .mes[data-ar-sig]')) {
@@ -825,8 +945,32 @@
         }
         const cn = CN_FONTS[s.cn ?? 0] ?? CN_FONTS[0];
         const tw = TW_FONTS[s.tw ?? 0] ?? TW_FONTS[0];
-        if (s.cn) { root.setProperty('--ar-cn', cn[1]); loadCss(cn[2], `ar-font-cn-${s.cn}`); } else root.removeProperty('--ar-cn');
-        if (s.tw) { root.setProperty('--ar-tw', tw[1]); loadCss(tw[2], `ar-font-tw-${s.tw}`); } else root.removeProperty('--ar-tw');
+        // 自己的字体（下拉框最后一项）：上传的文件或贴的链接
+        const userFont = (slot, fallback) => {
+            const uf = s.uf?.[slot];
+            if (!uf?.src) return null;
+            const fam = `ArUser-${slot}`;
+            const isFile = /\.(ttf|otf|woff2?)(\?|#|$)/i.test(uf.src) || uf.src.startsWith('/user/files/');
+            if (isFile) {
+                const key = `${slot}|${uf.src}`;
+                if (fontKeys[slot] !== key) {
+                    fontKeys[slot] = key;
+                    try {
+                        const ff = new FontFace(fam, `url("${uf.src}")`);
+                        ff.load().then((f) => { doc.fonts.add(f); }).catch(() => toastr?.warning?.('这个字体文件读不出来，换一个试试'));
+                    } catch { /* 很老的浏览器没有 FontFace */ }
+                }
+                return `"${fam}", ${fallback}`;
+            }
+            loadCss(uf.src, `ar-font-u-${slot}-${uf.src.length}`);
+            return uf.name ? `"${uf.name}", ${fallback}` : null;
+        };
+        const cnU = s.cn === CN_FONTS.length ? userFont('cn', CN_FONTS[0][1]) : null;
+        const twU = s.tw === TW_FONTS.length ? userFont('tw', TW_FONTS[0][1]) : null;
+        if (cnU) root.setProperty('--ar-cn', cnU);
+        else if (s.cn && s.cn < CN_FONTS.length) { root.setProperty('--ar-cn', cn[1]); loadCss(cn[2], `ar-font-cn-${s.cn}`); } else root.removeProperty('--ar-cn');
+        if (twU) root.setProperty('--ar-tw', twU);
+        else if (s.tw && s.tw < TW_FONTS.length) { root.setProperty('--ar-tw', tw[1]); loadCss(tw[2], `ar-font-tw-${s.tw}`); } else root.removeProperty('--ar-tw');
         // 版式、底图用不用酒馆自己的背景、信头的地址行
         for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, (LAYOUTS[s.lay ?? 0] ?? LAYOUTS[0])[1] === cls);
         body.classList.toggle('ar-bg-st', !!s.bgST);
@@ -968,6 +1112,28 @@
     doc.getElementById('chat')?.addEventListener('scroll', () => fixTex(), { passive: true });
     addEventListener('resize', () => fixTex(true));
 
+    // 把文件存到酒馆服务器上（user/files），返回能直接用的地址；存不了就返回 null
+    async function putFile(name, base64) {
+        try {
+            const c = ctx();
+            const r = await fetch('/api/files/upload', {
+                method: 'POST',
+                headers: c?.getRequestHeaders?.() ?? { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, data: base64 }),
+            });
+            if (!r.ok) return null;
+            const j = await r.json();
+            return j?.path ? '/' + String(j.path).replace(/^\/+/, '') : null;
+        } catch { return null; }
+    }
+    const fileB64 = (file) => new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(String(fr.result).split(',')[1] ?? '');
+        fr.onerror = rej;
+        fr.readAsDataURL(file);
+    });
+    const stamp = () => Date.now().toString(36);
+
     // 上传的图先缩小再存，免得设置文件太大
     function shrink(file, max, quality = 0.82) {
         return new Promise((resolve, reject) => {
@@ -1015,7 +1181,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.17</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.18</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-save"><input type="text" maxlength="12" placeholder="给现在这套配色起个名字"><button class="ar-btn" data-savescheme>存成方案</button></div>
@@ -1023,12 +1189,13 @@
             </section>
             <section><h4>纸纹</h4>
                 <div class="ar-papers">${PAPER_ORDER.map((i) => `<button data-paper="${i}"><i class="p${i}"></i><em>${PAPERS[i][0]}</em></button>`).join('')}</div>
-                <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（越大越清楚）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
+                <div class="ar-lib"></div>
+                <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（越大越清楚；传过的都留在上面，点一下就换回去）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
                 <label class="ar-row ar-texk"><span>纸纹浓淡</span><input type="range" min="5" max="100" step="5" data-texk></label>
                 <label class="ar-row ar-check ar-texk"><input type="checkbox" data-texfix><span>纸纹固定在屏幕上，纸从上面滑过（图案不会重复）</span></label>
             </section>
             <section><h4>版式</h4>
-                <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><i class="l${i}"></i><em>${n}</em></button>`).join('')}</div>
+                <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><em>${n}</em></button>`).join('')}</div>
             </section>
             <section><h4>文字</h4>
                 ${TEXTS.map(([k, n, , multi, lay]) => `<label class="ar-text" data-lay-only="${lay}"><span>${n}</span>${multi ? `<textarea rows="2" data-t="${k}"></textarea>` : `<input type="text" data-t="${k}">`}</label>`).join('')}
@@ -1039,8 +1206,10 @@
                 ${IMAGES.map(([, key, n]) => `<div class="ar-img ar-row" data-k="${key}"><span>${n}</span><label class="ar-btn">换一张<input type="file" accept="image/*" hidden></label><button class="ar-btn" data-reset="${key}">还原</button></div>`).join('')}
             </section>
             <section><h4>字体</h4>
-                <label class="ar-row"><span>中文</span><select data-f="cn">${CN_FONTS.map(([n], i) => `<option value="${i}">${n}</option>`).join('')}</select></label>
-                <label class="ar-row"><span>打字机字</span><select data-f="tw">${TW_FONTS.map(([n], i) => `<option value="${i}">${n}</option>`).join('')}</select></label>
+                <label class="ar-row"><span>中文</span><select data-f="cn">${CN_FONTS.map(([n], i) => `<option value="${i}">${n}</option>`).join('')}<option value="${CN_FONTS.length}">自己的字体</option></select></label>
+                <div class="ar-uf" data-uf="cn"><input type="text" data-ufurl="cn" placeholder="贴字体链接（.ttf .otf .woff2 文件，或者字体网站给的 css 链接）"><input type="text" data-ufname="cn" placeholder="字体名（css 链接时填，文件可不填）"><label class="ar-btn">上传字体文件<input type="file" accept=".ttf,.otf,.woff,.woff2,font/*" data-uffile="cn" hidden></label></div>
+                <label class="ar-row"><span>打字机字</span><select data-f="tw">${TW_FONTS.map(([n], i) => `<option value="${i}">${n}</option>`).join('')}<option value="${TW_FONTS.length}">自己的字体</option></select></label>
+                <div class="ar-uf" data-uf="tw"><input type="text" data-ufurl="tw" placeholder="贴字体链接（.ttf .otf .woff2 文件，或者字体网站给的 css 链接）"><input type="text" data-ufname="tw" placeholder="字体名（css 链接时填，文件可不填）"><label class="ar-btn">上传字体文件<input type="file" accept=".ttf,.otf,.woff,.woff2,font/*" data-uffile="tw" hidden></label></div>
             </section>
             <footer><button class="ar-btn" data-all>全部还原</button></footer>`;
         doc.body.append(p);
@@ -1052,10 +1221,27 @@
                 PRESETS.map(([n, c], i) => `<button data-p="${i}" title="${esc(n)}">${swatch(c)}<em>${esc(n)}</em></button>`).join('') +
                 mine.map((sc, i) => `<button data-sp="${i}" title="${esc(sc.name)}">${swatch(VARS.map(([v]) => sc.colors[v] ?? '#000'))}<em>${esc(sc.name)}</em><i class="ar-del" role="button" data-del="${i}" title="删掉这套">×</i></button>`).join('');
         };
+        // 纸纹库：上传过的每一张一个小格，点了换成它，右上角 × 删掉
+        const lib = () => {
+            const st = store();
+            const list = st?.texLib ?? [];
+            const on = (PAPERS[paperOf(st)] ?? PAPERS[0])[2] === 'upload';
+            p.querySelector('.ar-lib').innerHTML = list.map((u, i) =>
+                `<button data-lib="${i}" class="${on && st?.paperTex === u ? 'on' : ''}"><i style="background-image:url('${esc(u)}')"></i><i class="ar-del" role="button" data-libdel="${i}" title="删掉这张">×</i></button>`).join('');
+        };
         const sync = () => {
             presets();
+            lib();
             for (const inp of p.querySelectorAll('input[type=color]')) inp.value = hex(current(inp.dataset.v));
             for (const sel of p.querySelectorAll('select')) sel.value = String(store()?.[sel.dataset.f] ?? 0);
+            for (const box of p.querySelectorAll('[data-uf]')) {
+                const slot = box.dataset.uf;
+                box.hidden = (store()?.[slot] ?? 0) !== (slot === 'cn' ? CN_FONTS.length : TW_FONTS.length);
+                const uf = store()?.uf?.[slot] ?? {};
+                const u = box.querySelector('[data-ufurl]'); if (u && doc.activeElement !== u) u.value = uf.src?.startsWith('/user/files/') ? '' : (uf.src ?? '');
+                const n = box.querySelector('[data-ufname]'); if (n && doc.activeElement !== n) n.value = uf.name ?? '';
+                u.placeholder = uf.src?.startsWith('/user/files/') ? `已上传：${uf.file ?? '字体文件'}（也可以贴链接换掉）` : '贴字体链接（.ttf .otf .woff2 文件，或者字体网站给的 css 链接）';
+            }
             for (const b of p.querySelectorAll('[data-lay]')) b.classList.toggle('on', Number(b.dataset.lay) === (store()?.lay ?? 0));
             for (const b of p.querySelectorAll('[data-paper]')) b.classList.toggle('on', Number(b.dataset.paper) === paperOf(store()));
             for (const inp of p.querySelectorAll('[data-t]')) inp.value = text(inp.dataset.t);
@@ -1117,13 +1303,41 @@
                 st[e.target.dataset.f] = Number(e.target.value);
                 applyStyle();
                 save();
+                p.syncInputs?.();
+            }
+            // 自己的字体：贴链接 / 字体名
+            if (e.target.dataset?.ufurl !== undefined || e.target.dataset?.ufname !== undefined) {
+                const slot = e.target.dataset.ufurl ?? e.target.dataset.ufname;
+                st.uf ??= {};
+                st.uf[slot] ??= {};
+                if (e.target.dataset.ufurl !== undefined) { st.uf[slot].src = e.target.value.trim(); delete st.uf[slot].file; }
+                else st.uf[slot].name = e.target.value.trim();
+                applyStyle();
+                save();
+            }
+            // 自己的字体：上传文件（存到酒馆服务器上）
+            if (e.target.dataset?.uffile !== undefined && e.target.files?.[0]) {
+                const slot = e.target.dataset.uffile;
+                const f = e.target.files[0];
+                const ext = (f.name.match(/\.(ttf|otf|woff2?)$/i)?.[1] ?? 'ttf').toLowerCase();
+                toastr?.info?.('字体文件比较大，上传要一会儿');
+                const url = await putFile(`archive-font-${slot}-${stamp()}.${ext}`, await fileB64(f));
+                if (!url) { toastr?.error?.('字体没存上，可以改用贴链接'); return; }
+                st.uf ??= {};
+                st.uf[slot] = { src: url, file: f.name };
+                e.target.value = '';
+                applyStyle();
+                save();
+                p.syncInputs?.();
             }
             if (e.target.type === 'file' && e.target.files?.[0]) {
                 const key = e.target.closest('.ar-img').dataset.k;
                 if (key === 'paperTex') {
-                    // 自己的纸纹：存下来并直接换成「自己上传」
-                    // 纸纹要清楚：最长边留到 2400（手机屏是两三倍像素，1400 不够），原图小就不动
-                    st.paperTex = await shrink(e.target.files[0], 2400, 0.9);
+                    // 自己的纸纹：缩到最长边 2400，存到酒馆服务器上（存不了就存在设置里），放进纸纹库，并直接换成它
+                    const data = await shrink(e.target.files[0], 2400, 0.9);
+                    const url = (await putFile(`archive-paper-${stamp()}.jpg`, data.split(',')[1])) ?? data;
+                    st.texLib = [url, ...(st.texLib ?? []).filter((x) => x !== url)].slice(0, 12);
+                    st.paperTex = url;
                     delete st.texK;
                     st.papers ??= {};
                     st.papers[st.lay ?? 0] = PAPERS.findIndex((x) => x[2] === 'upload');
@@ -1143,6 +1357,20 @@
             const b = e.target.closest('button, .ar-x, .ar-del');
             if (!b || !st) return;
             if (b.classList.contains('ar-x')) { stylePanel(false); return; }
+            if (b.dataset.libdel !== undefined) {
+                const u = st.texLib?.[Number(b.dataset.libdel)];
+                st.texLib?.splice(Number(b.dataset.libdel), 1);
+                if (u && st.paperTex === u) delete st.paperTex;
+                if (u && u.startsWith('/user/files/')) fetch('/api/files/delete', { method: 'POST', headers: ctx()?.getRequestHeaders?.(), body: JSON.stringify({ path: u.slice(1) }) }).catch(() => {});
+                applyStyle(); save(); sync(); return;
+            }
+            if (b.dataset.lib !== undefined) {
+                st.paperTex = st.texLib?.[Number(b.dataset.lib)];
+                delete st.texK;
+                st.papers ??= {};
+                st.papers[st.lay ?? 0] = PAPERS.findIndex((x) => x[2] === 'upload');
+                applyStyle(); save(); sync(); return;
+            }
             if (b.dataset.del !== undefined) {
                 st.schemes?.splice(Number(b.dataset.del), 1);
             } else if (b.dataset.p !== undefined) {
@@ -1175,6 +1403,7 @@
             sync();
         });
         p.syncInputs = sync;
+        stylePanel.sync = sync;
         return p;
     }
 
@@ -1202,8 +1431,6 @@
         for (const k of ['MESSAGE_SENT', 'CHAT_CHANGED']) {
             if (et[k]) es.on(et[k], () => { if (empty()) memo(false); });
         }
-        // 换聊天时退出全屏
-        if (et.CHAT_CHANGED) es.on(et.CHAT_CHANGED, () => reading(null));
     }
 
     sync();
