@@ -179,7 +179,7 @@
         doc.getElementById('ar-clip')?.remove();
         for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch')) f.remove();
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
-        doc.getElementById('ar-font-hand')?.remove();
+        for (const x of doc.querySelectorAll('#chat > .mes')) { x.style.removeProperty('--ar-foot'); x.style.removeProperty('--ar-kh'); }
         doc.getElementById('ar-cover')?.remove();
         delete doc.documentElement.dataset.arPv;
         doc.documentElement.style.removeProperty('--ar-vh');
@@ -639,37 +639,70 @@
         }
     }, true);
 
-    // ── 版式四 · 答卷：每张纸最上面印一道题（命题作文、历史论述、政治论述），正文就是答案；右上角是红笔的分数。九道题按消息编号轮着出 ──
-    // 每道：满分、题干、材料（楷体，可以没有）、要求
+    // ── 版式四 · 答卷：照真的试卷。每张纸印一道题，正文就是答案。九道题按消息编号轮着出 ──
+    // 题型和问法照高考真题（语文材料作文、历史开放性论述题、政治主观题），材料是自己写的；没有分数批改
+    const ESSAY_REQ = '要求：选准角度，确定立意，明确文体，自拟标题；不要套作，不得抄袭；不得泄露个人信息；不少于 800 字。';
+    const ESSAY_ASK = '以上材料引发了你怎样的联想和思考？请写一篇文章。';
     const EXAM = [
-        [60, '阅读下面的材料，根据要求写作。', '有人说，记住一个人，是从记住他说话的语气开始的。', '要求：自拟题目，自选角度，文体不限；不少于 800 字。'],
-        [12, '阅读材料，完成下列要求。', '有学者认为，历史不只写在大事里，也写在一顿饭、一封信、一次告别里。', '要求：围绕材料提炼一个观点，结合所学加以论述。观点明确，史论结合。'],
-        [10, '结合材料，运用“矛盾的普遍性与特殊性”的知识，说明应当怎样看待人与人之间的不同。', '', '要求：条理清楚，言之有据。'],
-        [60, '阅读下面的材料，根据要求写作。', '同一条路，去的时候和回来的时候，看见的东西并不一样。', '要求：自拟题目，自选角度，文体不限；不少于 800 字。'],
-        [12, '阅读材料，完成下列要求。', '书信曾是人们相隔两地时最主要的联系方式。一封信从写下到送达，短则数日，长则数月。', '要求：从“通信方式的变迁”中任选一个角度，自拟论题并加以阐述。'],
-        [10, '结合材料，运用“量变与质变”的知识，谈谈两个人的关系是怎样一点一点改变的。', '', '要求：观点正确，层次分明。'],
-        [60, '以“那一天之后”为题，写一篇文章。', '', '要求：文体不限，诗歌除外；不少于 800 字。'],
-        [12, '阅读材料，完成下列要求。', '一座城市的记忆，往往保存在最普通的地方：一个车站，一家旧书店，一条走过很多遍的街。', '要求：结合材料与所学，以“城市与记忆”为主题写一则短论。'],
-        [10, '结合材料，运用“意识的能动作用”的知识，说明为什么人会一再想起已经过去的事。', '', '要求：紧扣材料，逻辑清晰。'],
+        { subj: '语文', sec: '四、写作（60 分）', q: '23. 阅读下面的材料，根据要求写作。（60 分）',
+            m: ['一封信寄出之后，写信的人就无法再改动其中的一个字；而读信的人，往往要过很久，才读懂当时没有读懂的那一句。'], a: ESSAY_ASK, r: ESSAY_REQ },
+        { subj: '历史', q: '42. 阅读材料，完成下列要求。（12 分）',
+            m: ['材料　在电报和电话普及以前，书信几乎是人们相隔两地时唯一的联系方式。一封家书从寄出到送达，短则数日，长则数月；写信人落笔时的消息，到收信人手中往往已是旧闻。即便如此，人们仍然在信中约定归期、商量婚嫁、托付家事。'],
+            a: '根据材料并结合所学知识，围绕“通信方式与社会生活”自拟一个论题，并予以阐述。（要求：论题明确，史论结合，逻辑清晰。）' },
+        { subj: '思想政治', q: '40. 阅读材料，完成下列要求。（12 分）',
+            m: ['两个性格迥异的人长期相处，起初处处是摩擦：一个习惯把话说尽，一个习惯把话留在心里。时间久了，他们并没有变成同一种人，却各自学会了对方的一点方式。'],
+            a: '结合材料，运用“矛盾的同一性和斗争性”的知识，说明应当怎样看待人与人相处中的分歧。' },
+        { subj: '语文', sec: '四、写作（60 分）', q: '23. 阅读下面的材料，根据要求写作。（60 分）',
+            m: ['有人说，了解一个人，要看他怎样对待离别；也有人说，要看他怎样对待重逢。'], a: ESSAY_ASK, r: ESSAY_REQ },
+        { subj: '历史', q: '42. 阅读材料，完成下列要求。（12 分）',
+            m: ['材料　照相术传入以后，起初只是少数人的新奇体验；到二十世纪初，城镇里的照相馆日渐增多，全家福、毕业照、结婚照成为许多家庭保存记忆的方式。有学者指出，普通人第一次能够看见自己年轻时的样子。'],
+            a: '根据材料并结合所学知识，围绕“技术变迁与日常生活”自拟一个论题，并予以阐述。（要求：论题明确，史论结合，逻辑清晰。）' },
+        { subj: '思想政治', q: '40. 阅读材料，完成下列要求。（12 分）',
+            m: ['一位修复古籍的师傅说，一页纸上要补千百个小洞，每补一个都看不出变化；可是某一天把它举到灯下，它已经是完整的一页了。'],
+            a: '结合材料，运用“量变与质变的辩证关系”的知识，说明这段话给我们的启示。' },
+        { subj: '语文', sec: '四、写作（60 分）', q: '23. 阅读下面的材料，根据要求写作。（60 分）',
+            m: ['照片留住的是一个瞬间的样子，记忆留住的却是那个瞬间的感受。时间久了，两者常常对不上。'], a: ESSAY_ASK, r: ESSAY_REQ },
+        { subj: '历史', q: '42. 阅读材料，完成下列要求。（12 分）',
+            m: ['材料　钟表进入日常生活之前，人们依照日出日落、节气农时安排作息；铁路时刻表和工厂汽笛出现以后，“几点几分”才成为许多人必须遵守的约定。'],
+            a: '根据材料并结合所学知识，围绕“时间观念的变化”自拟一个论题，并予以阐述。（要求：论题明确，史论结合，逻辑清晰。）' },
+        { subj: '思想政治', q: '40. 阅读材料，完成下列要求。（12 分）',
+            m: ['同一场雨，赶路的人嫌它误事，等雨的农人却盼了许久；多年以后回想起来，赶路的人记得的，也许只是雨中有人递来的一把伞。'],
+            a: '结合材料，运用“意识的能动作用”的知识，分析人们对同一件事的感受为什么不同、又为什么会改变。' },
     ];
     function scratch() {
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
-        if (on) loadCss('https://fonts.loli.net/css2?family=Caveat:wght@400;500&display=swap', 'ar-font-hand');
+        const c = ctx();
+        const total = Array.isArray(c?.chat) ? c.chat.length : 0;
+        const p2 = (n) => String(n).padStart(2, '0');
         for (const el of doc.querySelectorAll('#chat > .mes[mesid]')) {
             let sc = el.querySelector(':scope > .ar-scratch');
-            if (!on) { sc?.remove(); continue; }
+            if (!on) {
+                sc?.remove();
+                el.style.removeProperty('--ar-foot');
+                el.style.removeProperty('--ar-kh');
+                continue;
+            }
             const id = Number(el.getAttribute('mesid'));
+            const x = EXAM[id % EXAM.length];
+            const d = c?.chat?.[id] ? when(c, c.chat[id]) : null;
+            const year = d ? d.getFullYear() : new Date().getFullYear();
+            // 页脚里的总页数会随着聊天变长而变，每次都写
+            el.style.setProperty('--ar-foot', q(`${x.subj}试题　第 ${id + 1} 页（共 ${Math.max(total, id + 1)} 页）`));
+            el.style.setProperty('--ar-kh', q(`${d ? `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}` : '00000000'}${String(id + 1).padStart(4, '0')}`));
             if (sc?.dataset.id === String(id)) continue;
-            const [full, stem, mat, req] = EXAM[id % EXAM.length];
-            // 分数：每一条固定（由编号算出来），在满分的八成上下
-            const score = Math.max(1, Math.round(full * (0.74 + ((id * 37) % 19) / 100)));
             if (!sc) {
                 sc = doc.createElement('div');
                 sc.className = 'ar-scratch';
                 el.insertBefore(sc, el.querySelector(':scope > .mes_block') ?? null);
             }
             sc.dataset.id = String(id);
-            sc.innerHTML = `<p class="q"><b>${id + 1}.</b>（${full} 分）${stem}</p>${mat ? `<p class="m">${mat}</p>` : ''}<p class="r">${req}</p><span class="score">${score}</span>`;
+            sc.innerHTML =
+                (id === 0 ? `<div class="hd"><i>绝密★启用前</i><b>${year} 届高三年级模拟考试</b><em>${x.subj}</em></div>` : '') +
+                (x.sec ? `<p class="sec">${x.sec}</p>` : '') +
+                `<p class="q">${x.q}</p>` +
+                x.m.map((t) => `<p class="m">${t}</p>`).join('') +
+                `<p class="a">${x.a}</p>` +
+                (x.r ? `<p class="r">${x.r}</p>` : '');
         }
     }
 
