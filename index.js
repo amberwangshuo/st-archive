@@ -202,7 +202,7 @@
     function sync() {
         if (themeOn()) {
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            doc.documentElement.dataset.arPv = '18';
+            doc.documentElement.dataset.arPv = '19';
             mount();
             body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
@@ -530,7 +530,33 @@
         }
         return d;
     }
-    const PROPS = ['--ar-no', '--ar-date', '--ar-time', '--ar-stamp', '--ar-datel', '--ar-sheet', '--ar-title', '--ar-dear', '--ar-open', '--ar-close', '--ar-name', '--ar-addr', '--ar-pic'];
+    const PROPS = ['--ar-no', '--ar-date', '--ar-time', '--ar-stamp', '--ar-datel', '--ar-sheet', '--ar-title', '--ar-dear', '--ar-name', '--ar-pic'];
+    // 纸上能双击改的几行字（v42 起是真元素，不再是伪元素：伪元素点不到，双击只能按坐标猜，她说定不准）。
+    // data-k 是哪一行（主题按它排版），data-e 是改的是哪一项设置（角色和你各一份的，分 1 / 2）
+    function keyLine(el, k, e, txt, where) {
+        let x = el.querySelector(`.ar-k[data-k="${k}"]`);
+        if (!x) {
+            x = doc.createElement('div');
+            x.className = 'ar-k';
+            x.dataset.k = k;
+            where(x);
+        }
+        if (x.dataset.e !== e) x.dataset.e = e;
+        if (x.textContent !== txt) x.textContent = txt;
+    }
+    function keyLines(el, user, t, to, id) {
+        const blk = el.querySelector(':scope > .mes_block');
+        const mt = blk?.querySelector(':scope > .mes_text');
+        const ch = blk?.querySelector(':scope > .ch_name');
+        const nm = ch?.querySelector('.name_text');
+        if (!blk || !mt || !ch || !nm) return;
+        keyLine(el, 'title', 'title', t.title.replaceAll('{n}', words(id)).replaceAll('{no}', String(id)), (x) => blk.prepend(x));
+        keyLine(el, 'open', user ? 'open2' : 'open1', user ? t.open2 : t.open1, (x) => blk.prepend(x));
+        keyLine(el, 'epi', 'epi', t.epi.trim() ? t.epi : '', (x) => mt.before(x));
+        keyLine(el, 'close', user ? 'close2' : 'close1', user ? t.close2 : t.close1, (x) => mt.after(x));
+        keyLine(el, 'addr', user ? 'addr2' : 'addr', user ? t.addr2 : t.addr, (x) => nm.after(x));
+        keyLine(el, 'dear', 'dear', t.dear.replaceAll('{name}', to), (x) => ch.append(x));
+    }
     function dress() {
         if (!body.classList.contains('ar-tab')) return;
         const c = ctx();
@@ -548,6 +574,7 @@
             const time = d ? `${p2(d.getHours())}:${p2(d.getMinutes())}` : '';
             const sw = Array.isArray(m.swipes) && m.swipes.length ? m.swipes.length : 1;
             const si = m.swipe_id ?? 0;
+            keyLines(el, user, t, to, id);
             const img = el.querySelector('.mesAvatarWrapper .avatar img');
             const v = [
                 q(id), q(date), q(time),
@@ -556,10 +583,7 @@
                 q(`${si + 1} / ${sw}`),
                 q(t.title.replaceAll('{n}', words(id)).replaceAll('{no}', String(id))),
                 q(t.dear.replaceAll('{name}', to)),
-                q(user ? t.open2 : t.open1),
-                q(user ? t.close2 : t.close1),
                 q(el.getAttribute('ch_name') || ''),
-                q(user ? t.addr2 : t.addr),
                 img?.getAttribute('src') ? `url("${fullPic(img.getAttribute('src'))}")` : 'none',
             ];
             const sig = v.join('|');
@@ -796,36 +820,20 @@
         if (t === doc.documentElement || t === body || t.id === 'bg1' || t.id === 'bg_custom' || t.id === 'sheld') return { img: 'desk' };
         if (!mes) return null;
         if (t.closest('.ar-scratch .hd b')) return { text: 'exam' };
-        if (lay === 'ar-lay-b') {
-            const av = mes.querySelector('.mesAvatarWrapper');
-            if (t.closest('.mesAvatarWrapper') && x > (r(av.querySelector('.avatar'))?.right ?? 1e9)) return { img: user ? 'mood2' : 'mood1' };
-            if (t.closest('.mes_reasoning_header')) return { text: 'title' };
-            const nm = r(mes.querySelector('.ch_name'));
-            if (t.classList.contains('mes_block') && nm && y < nm.top) return { text: 'title' };
-            const txt = mes.querySelector('.mes_text');
-            const first = r(txt?.firstElementChild);
-            if (t === txt && first && y < first.top) return { text: 'epi' };
+        // 标题、题记、地址、称呼、开场白、落款：纸上的真文字，点到哪一行就是哪一行
+        const k = t.closest('.ar-k[data-e]');
+        if (k) return { text: k.dataset.e };
+        // 有思维链时标题（刊物）、称呼（信）写在思维链的开关上
+        if (t.closest('.mes_reasoning_header')) {
+            if (lay === 'ar-lay-b') return { text: 'title' };
+            if (lay === 'ar-lay-c') return { text: 'dear' };
         }
-        if (lay === 'ar-lay-c') {
-            const av = r(mes.querySelector('.mesAvatarWrapper .avatar'));
-            if (t.closest('.mesAvatarWrapper') && av) {
-                if (x < av.left) return { img: user ? 'mood2' : 'mood1' };
-                if (x > av.right) return { img: user ? 'mood1' : 'mood2' };
-            }
-            if (t.classList.contains('name_text')) {
-                const fs = parseFloat(getComputedStyle(t).fontSize) || 14;
-                if (y > r(t).top + fs * 1.1) return { text: user ? 'addr2' : 'addr' };
-            }
-            if (t.closest('.mes_reasoning_header')) return { text: 'dear' };
-            const nt = r(mes.querySelector('.name_text'));
-            if (t.classList.contains('ch_name') && nt && y > nt.bottom + 6) return { text: 'dear' };
-            const txt = mes.querySelector('.mes_text');
-            const tr = r(txt);
-            if (t.classList.contains('mes_block') && tr) {
-                if (y < tr.top) return { text: user ? 'open2' : 'open1' };
-            }
-            const last = r(txt?.lastElementChild);
-            if (t === txt && last && y > last.bottom) return { text: user ? 'close2' : 'close1' };
+        // 氛围图：刊物在头像右边，信在头像两边
+        const av = r(mes.querySelector('.mesAvatarWrapper .avatar'));
+        if (av && t.closest('.mesAvatarWrapper')) {
+            if (lay === 'ar-lay-b' && x > av.right) return { img: user ? 'mood2' : 'mood1' };
+            if (lay === 'ar-lay-c' && x < av.left) return { img: user ? 'mood2' : 'mood1' };
+            if (lay === 'ar-lay-c' && x > av.right) return { img: user ? 'mood1' : 'mood2' };
         }
         return null;
     }
@@ -834,7 +842,8 @@
         const multi = TEXTS.find((t) => t[0] === key)?.[3];
         const box = doc.createElement('div');
         box.id = 'ar-edit';
-        box.innerHTML = `<small>${esc(TEXT_NAME[key] ?? '')}</small>${multi ? '<textarea rows="3"></textarea>' : '<input type="text">'}<span><button data-a="0">作罢</button><button data-a="1">定稿</button></span>`;
+        const changed = store()?.texts?.[key] !== undefined && store().texts[key] !== TEXTS.find((t) => t[0] === key)?.[2];
+        box.innerHTML = `<small>${esc(TEXT_NAME[key] ?? '')}</small>${multi ? '<textarea rows="3"></textarea>' : '<input type="text">'}<span>${changed ? '<button data-a="r">还原</button>' : ''}<button data-a="0">作罢</button><button data-a="1">定稿</button></span>`;
         const inp = box.querySelector('textarea, input');
         inp.value = text(key);
         doc.documentElement.append(box);
@@ -849,7 +858,7 @@
             if (ok) {
                 const st = store();
                 st.texts ??= {};
-                st.texts[key] = inp.value;
+                if (ok === 'r') delete st.texts[key]; else st.texts[key] = inp.value;
                 applyStyle();
                 dress();
                 scratch();
@@ -858,13 +867,33 @@
             }
             box.remove();
         };
-        box.addEventListener('click', (e) => { const a = e.target.closest('button')?.dataset.a; if (a !== undefined) done(a === '1'); });
+        box.addEventListener('click', (e) => { const a = e.target.closest('button')?.dataset.a; if (a !== undefined) done(a === 'r' ? 'r' : a === '1'); });
         inp.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') done(false);
             if (e.key === 'Enter' && (!multi || e.ctrlKey || e.metaKey)) { e.preventDefault(); done(true); }
         });
     }
-    function editImage(key) {
+    function editImage(key, x, y) {
+        doc.getElementById('ar-edit')?.remove();
+        if (store()?.images?.[key] && x !== undefined) {
+            const box = doc.createElement('div');
+            box.id = 'ar-edit';
+            box.innerHTML = `<small>${esc(IMAGES.find((m) => m[1] === key)?.[2] ?? '')}</small><span><button data-a="r">还原</button><button data-a="0">作罢</button><button data-a="1">换一张</button></span>`;
+            doc.documentElement.append(box);
+            const W = innerWidth, H = innerHeight;
+            const bw = Math.min(260, W - 24);
+            box.style.width = `${bw}px`;
+            box.style.left = `${Math.max(12, Math.min(W - bw - 12, x - bw / 2))}px`;
+            box.style.top = `${Math.max(12, Math.min(H - 90, y + 14))}px`;
+            box.addEventListener('click', (e) => {
+                const a = e.target.closest('button')?.dataset.a;
+                if (a === undefined) return;
+                box.remove();
+                if (a === 'r') { delete store().images[key]; applyStyle(); save(); }
+                if (a === '1') editImage(key);
+            });
+            return;
+        }
         const inp = doc.createElement('input');
         inp.type = 'file';
         inp.accept = 'image/*';
@@ -880,6 +909,10 @@
         });
         inp.click();
     }
+    doc.addEventListener('pointerdown', (e) => {
+        const box = doc.getElementById('ar-edit');
+        if (box && !box.contains(e.target)) box.remove();
+    }, true);
     doc.addEventListener('dblclick', (e) => {
         if (!body.classList.contains('ar-tab')) return;
         if (e.target.closest?.('#ar-edit, #ar-style, textarea, input, .mes_text p, .mes_text li')) return;
@@ -889,7 +922,7 @@
         e.stopPropagation();
         doc.getSelection?.()?.removeAllRanges();
         if (hit.text) editText(hit.text, e.clientX, e.clientY);
-        else if (hit.img) editImage(hit.img);
+        else if (hit.img) editImage(hit.img, e.clientX, e.clientY);
     }, true);
 
     // ── 全屏：整个聊天界面铺满屏幕——文件夹、签、夹子、垫纸、顶栏都收起来，只剩一叠消息纸和输入框，桌面是壁纸。
@@ -924,6 +957,7 @@
     doc.addEventListener('fullscreenchange', () => { if (!doc.fullscreenElement && body.classList.contains('ar-immersive')) body.classList.remove('ar-immersive'); });
 
     function undress() {
+        for (const x of doc.querySelectorAll('#chat .ar-k')) x.remove();
         for (const el of doc.querySelectorAll('#chat > .mes[data-ar-sig]')) {
             delete el.dataset.arSig;
             for (const k of PROPS) el.style.removeProperty(k);
@@ -975,7 +1009,6 @@
         for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, (LAYOUTS[s.lay ?? 0] ?? LAYOUTS[0])[1] === cls);
         body.classList.toggle('ar-bg-st', !!s.bgST);
         root.setProperty('--ar-idle', q(text('idle')));
-        if (text('epi').trim()) root.setProperty('--ar-epi', q(text('epi'))); else root.removeProperty('--ar-epi');
         // 纸纹
         const pp = PAPERS[paperOf(s)] ?? PAPERS[0];
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
@@ -1181,7 +1214,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.18</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.19</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-save"><input type="text" maxlength="12" placeholder="给现在这套配色起个名字"><button class="ar-btn" data-savescheme>存成方案</button></div>
@@ -1197,13 +1230,9 @@
             <section><h4>版式</h4>
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><em>${n}</em></button>`).join('')}</div>
             </section>
-            <section><h4>文字</h4>
-                ${TEXTS.map(([k, n, , multi, lay]) => `<label class="ar-text" data-lay-only="${lay}"><span>${n}</span>${multi ? `<textarea rows="2" data-t="${k}"></textarea>` : `<input type="text" data-t="${k}">`}</label>`).join('')}
-            </section>
             <section><h4>图片</h4>
                 <label class="ar-row ar-check"><input type="checkbox" data-bgst><span>底图用酒馆自己的背景</span></label>
                 <label class="ar-row ar-check"><input type="checkbox" data-cover><span>打开酒馆时先看封面</span></label>
-                ${IMAGES.map(([, key, n]) => `<div class="ar-img ar-row" data-k="${key}"><span>${n}</span><label class="ar-btn">换一张<input type="file" accept="image/*" hidden></label><button class="ar-btn" data-reset="${key}">还原</button></div>`).join('')}
             </section>
             <section><h4>字体</h4>
                 <label class="ar-row"><span>中文</span><select data-f="cn">${CN_FONTS.map(([n], i) => `<option value="${i}">${n}</option>`).join('')}<option value="${CN_FONTS.length}">自己的字体</option></select></label>
@@ -1244,15 +1273,10 @@
             }
             for (const b of p.querySelectorAll('[data-lay]')) b.classList.toggle('on', Number(b.dataset.lay) === (store()?.lay ?? 0));
             for (const b of p.querySelectorAll('[data-paper]')) b.classList.toggle('on', Number(b.dataset.paper) === paperOf(store()));
-            for (const inp of p.querySelectorAll('[data-t]')) inp.value = text(inp.dataset.t);
             const bg = p.querySelector('[data-bgst]');
             if (bg) bg.checked = !!store()?.bgST;
             const cvb = p.querySelector('[data-cover]');
             if (cvb) cvb.checked = store()?.cover !== false;
-            for (const row of p.querySelectorAll('[data-lay-only]')) {
-                const l = Number(row.dataset.layOnly);
-                row.hidden = l !== -1 && l !== (store()?.lay ?? 0);
-            }
             const tk = p.querySelector('[data-texk]');
             if (tk) tk.value = String(store()?.texK ?? 100);
             for (const row of p.querySelectorAll('.ar-texk')) row.hidden = !store()?.paperTex;
@@ -1264,7 +1288,6 @@
             const st = store();
             if (!st) return;
             const v = e.target.dataset?.v;
-            const t = e.target.dataset?.t;
             if (e.target.dataset?.texk !== undefined) {
                 // 拖动时每次都重做一整张图太慢：停下来 120ms 再算
                 st.texK = Number(e.target.value);
@@ -1275,9 +1298,6 @@
             if (v) {
                 st.colors ??= {};
                 st.colors[v] = e.target.value;
-            } else if (t) {
-                st.texts ??= {};
-                st.texts[t] = e.target.value;
             } else return;
             applyStyle();
             save();
@@ -1341,10 +1361,6 @@
                     delete st.texK;
                     st.papers ??= {};
                     st.papers[st.lay ?? 0] = PAPERS.findIndex((x) => x[2] === 'upload');
-                } else {
-                    const max = IMAGES.find((x) => x[1] === key)[3];
-                    st.images ??= {};
-                    st.images[key] = await shrink(e.target.files[0], max);
                 }
                 e.target.value = '';
                 applyStyle();
@@ -1392,8 +1408,6 @@
                 st.papers[st.lay ?? 0] = Number(b.dataset.paper);
                 // 选了「自己上传」但还没传过图：直接弹出选图
                 if (PAPERS[paperOf(st)][2] === 'upload' && !st.paperTex) p.querySelector('[data-k="paperTex"] input')?.click();
-            } else if (b.dataset.reset) {
-                if (st.images) delete st.images[b.dataset.reset];
             } else if (b.dataset.all !== undefined) {
                 // 自己存的配色方案留着，别的都回到默认
                 delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.bgST; delete st.texts; delete st.papers; delete st.texK;
