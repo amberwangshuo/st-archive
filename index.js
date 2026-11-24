@@ -452,7 +452,7 @@
         ['close1', '角色来信的落款', 'Nothing new...\nEver yours,', true, 2],
         ['open2', '你回信的开场白', '我想作诗，写雨，写夜的相思，写你，写不出。', true, 2],
         ['close2', '你回信的落款', 'Yours ever, fair Star,', true, 2],
-        ['exam', '答卷的卷头（考试名称，比如 语文周测、十一月月考）', '语文周测', false, 3],
+        ['exam', '答卷的考试名称（前面自动加年份，比如 高三第三次模拟考试、高二期末考试）', '高三第三次模拟考试', false, 3],
         ['idle', '输入框收起时的那一句', '从前的日色变得慢，车，马，邮件都慢', false, -1],
     ];
 
@@ -471,6 +471,8 @@
         if (s.texts?.addr === 'Private Archive') delete s.texts.addr;
         // 0.13：刊物标题的默认值从「Page {n}」换成「无题」（她说 Page Zero 绝对不可以），旧的默认值别留着
         if (s.texts?.title === 'Page {n}') delete s.texts.title;
+        // 0.15.3：答卷的考试名称默认从「语文周测」换成模考，旧的默认值别留着
+        if (s.texts?.exam === '语文周测') delete s.texts.exam;
         // 0.11：纸纹改成每种版式各记各的。旧的那一个选择：是「自己上传」就留给现在的版式，别的不留（三种版式各用新的默认纸）
         if (s.paper !== undefined) {
             if (s.paper === 5) { s.papers ??= {}; s.papers[s.lay ?? 0] ??= 5; }
@@ -662,6 +664,12 @@
         '如果为本文拟一个标题，你会怎样拟？请说明理由。（4 分）',
         '文中的叙述视角有什么特点？这种视角对读者的感受有什么影响？（6 分）',
     ];
+    // 注意事项：照模考卷的写法
+    const EXAM_NOTES = [
+        '1. 答卷前，考生务必将自己的姓名、准考证号填写在答题卡上。',
+        '2. 回答选择题时，选出每小题答案后，用铅笔把答题卡上对应题目的答案标号涂黑。如需改动，用橡皮擦干净后，再选涂其他答案标号。回答非选择题时，将答案写在答题卡上。写在本试卷上无效。',
+        '3. 考试结束后，将本试卷和答题卡一并交回。',
+    ];
     function scratch() {
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
         const c = ctx();
@@ -682,14 +690,13 @@
             const year = d ? d.getFullYear() : new Date().getFullYear();
             // 页脚里的总页数会随着聊天变长而变，每次都写
             el.style.setProperty('--ar-foot', q(`语文试题　第 ${id + 1} 页（共 ${Math.max(total, id + 1)} 页）`));
-            el.style.setProperty('--ar-kh', q(p2((id % 48) + 1)));
+            el.style.setProperty('--ar-kh', q(`${year}${p2((d ? d.getMonth() : 0) + 1)}${p2((id % 48) + 1)}`));
             // 题号接着前面几张往下排：第 id 张是 3id+1 ～ 3id+3
             const n0 = id * 3 + 1;
-            // 卷头只有第一张有：学年学期（九月到一月是第一学期，其余是第二学期）、考试名称（style 卡里可以改）、时间和满分
-            const mo = d ? d.getMonth() + 1 : new Date().getMonth() + 1;
-            const term = mo >= 9 ? `${year}—${year + 1} 学年度第一学期` : mo === 1 ? `${year - 1}—${year} 学年度第一学期` : `${year - 1}—${year} 学年度第二学期`;
-            const name = text('exam').trim() || '语文周测';
-            const key = `${id}|${id === 0 ? `${term}|${name}` : ''}`;
+            // 卷头只有第一张有，照真的模考卷：考试名称（style 卡里可以改，前面加年份）、「语文试卷」、试卷说明、注意事项，然后大题和小题的标题
+            const name = text('exam').trim() || '高三第三次模拟考试';
+            const pages = Math.max(total, id + 1);
+            const key = `${id}|${id === 0 ? `${year}|${name}|${pages}` : ''}`;
             if (sc?.dataset.id !== key) {
                 if (!sc) {
                     sc = doc.createElement('div');
@@ -698,7 +705,10 @@
                 }
                 sc.dataset.id = key;
                 sc.innerHTML =
-                    (id === 0 ? `<div class="hd"><b>${term}</b><em>${esc(name)}</em><p>（时间：40 分钟　满分：50 分）</p></div><p class="sec">现代文阅读</p>` : '') +
+                    (id === 0 ? `<div class="hd"><b>${year} 年${esc(name)}</b><em>语文试卷</em>` +
+                        `<p class="ds">（本试卷共 ${pages} 页，满分 150 分，考试时间 150 分钟。）</p>` +
+                        `<u>注意事项：</u>${EXAM_NOTES.map((t) => `<p class="nt">${t}</p>`).join('')}</div>` +
+                        `<p class="sec">一、现代文阅读（35 分）</p><p class="sub">（一）现代文阅读 I（本题共 3 小题，18 分）</p>` : '') +
                     `<p class="a">阅读下面的文字，完成 ${n0}～${n0 + 2} 题。</p>`;
             }
             const blk = el.querySelector(':scope > .mes_block');
