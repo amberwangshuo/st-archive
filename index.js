@@ -190,6 +190,7 @@
             gatherTools();
             dress();
             wall();
+            letters();
         } else if (body.classList.contains('ar-tab')) {
             unmount();
         }
@@ -263,6 +264,40 @@
         if (img && img !== 'none') root.setProperty('--ar-wall', img);
         else root.removeProperty('--ar-wall');
     }
+
+    // ── 角色抽屉的索引：按名字排序时，每组第一个角色左边写拼音首字母（主题用 data-ar-l 显示） ──
+    // 汉字的首字母：和每个字母的第一个汉字比大小（浏览器自带的拼音排序规则）
+    const PY_LETTERS = 'ABCDEFGHJKLMNOPQRSTWXYZ';
+    const PY_BOUND = '阿八嚓哒妸发旮哈讥咔垃妈拏噢妑七呥仨他穵夕丫帀';
+    let pyColl = null;
+    try { pyColl = new Intl.Collator('zh-Hans-CN-u-co-pinyin'); } catch { pyColl = null; }
+    function initial(name) {
+        const ch = String(name ?? '').trim().replace(/^[\s《「『（(【\[“"'〈<]+/, '').charAt(0);
+        if (!ch) return '#';
+        if (/[a-z]/i.test(ch)) return ch.toUpperCase();
+        if (!/[\u3400-\u9fff]/.test(ch) || !pyColl) return '#';
+        let r = '#';
+        for (let i = 0; i < PY_BOUND.length; i++) {
+            if (pyColl.compare(ch, PY_BOUND[i]) >= 0) r = PY_LETTERS[i]; else break;
+        }
+        return r;
+    }
+    function letters() {
+        const list = doc.getElementById('rm_print_characters_block');
+        if (!list) return;
+        const opt = doc.getElementById('character_sort_order')?.selectedOptions?.[0];
+        const byName = !!opt && opt.dataset.field === 'name' && opt.dataset.order !== 'random';
+        let last = null;
+        for (const el of list.querySelectorAll(':scope > .character_select, :scope > .group_select')) {
+            if (!byName || !body.classList.contains('ar-tab')) { el.removeAttribute('data-ar-l'); continue; }
+            const L = initial(el.querySelector('.ch_name')?.textContent);
+            if (L !== last) el.setAttribute('data-ar-l', L); else el.removeAttribute('data-ar-l');
+            last = L;
+        }
+    }
+    const charList = doc.getElementById('rm_print_characters_block');
+    if (charList) new MutationObserver(() => letters()).observe(charList, { childList: true });
+    doc.getElementById('character_sort_order')?.addEventListener('change', () => setTimeout(letters, 50));
 
     // ── style 卡：配色（能存成自己的方案）、版式、几行可以改的字、图片、字体 ──
     const VARS = [

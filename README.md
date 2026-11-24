@@ -1,6 +1,6 @@
 # 档案 archive
 
-SillyTavern 扩展，配合「档案」主题使用（0.9 起要配主题 v23 或更新的版本；0.9.1 配 v24）：
+SillyTavern 扩展，配合「档案」主题使用（0.10 配主题 v25）：
 
 - 文件夹上的三枚签：index（角色）、records（聊天记录；欢迎页上翻到最近聊天那一叠）、archive（展开顶栏图标；欢迎页上翻回封面）
 - 侧面四枚签：style、lore（世界书）、preset（AI 设置）、persona（人设）
