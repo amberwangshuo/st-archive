@@ -108,7 +108,8 @@
         sheld.append(clip);
         const under = doc.createElement('div');
         under.id = 'ar-under';
-        sheld.insertBefore(under, doc.getElementById('chat'));
+        // 放在 #sheld 最前面（三枚签后面）：不依赖 #chat 一定是 #sheld 的直接子元素
+        sheld.insertBefore(under, tabs.nextSibling);
         fill();
         applyStyle();
     }
@@ -449,9 +450,15 @@
         const pp = PAPERS[s.paper ?? 0] ?? PAPERS[0];
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
-        else if (pp[2] === 'upload' && s.paperTex) { root.setProperty('--ar-cotton', `url("${s.paperTex}")`); root.setProperty('--ar-cs', '360px auto'); }
+        else if (pp[2] === 'upload' && s.paperTex) {
+            // 自己上传的纸纹：铺满每张纸（等比例放大，多出来的裁掉），不重复平铺
+            root.setProperty('--ar-cotton', `url("${s.paperTex}")`);
+            root.setProperty('--ar-cs', 'cover');
+            root.setProperty('--ar-pp', '50% 50%');
+            root.setProperty('--ar-cr', 'no-repeat');
+        }
         else root.removeProperty('--ar-cotton');
-        if (pp[2] !== 'upload' || !s.paperTex) root.removeProperty('--ar-cs');
+        if (pp[2] !== 'upload' || !s.paperTex) for (const v of ['--ar-cs', '--ar-pp', '--ar-cr']) root.removeProperty(v);
         wall();
         dress();
     }
@@ -460,7 +467,7 @@
         const root = doc.documentElement.style;
         for (const [v] of VARS) root.removeProperty(v);
         for (const [v] of IMAGES) root.removeProperty(v);
-        for (const v of ['--ar-cn', '--ar-tw', '--ar-addr', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-wall']) root.removeProperty(v);
+        for (const v of ['--ar-cn', '--ar-tw', '--ar-addr', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-pp', '--ar-cr', '--ar-wall']) root.removeProperty(v);
         for (const [, cls] of LAYOUTS) if (cls) body.classList.remove(cls);
         body.classList.remove('ar-bg-st');
         undress();
@@ -507,7 +514,7 @@
             </section>
             <section><h4>纸纹</h4>
                 <div class="ar-papers">${PAPERS.map(([n], i) => `<button data-paper="${i}"><i class="p${i}"></i><em>${n}</em></button>`).join('')}</div>
-                <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（会铺满每张纸，浅色的图最好）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
+                <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（等比例铺满每张纸，浅色的图最好）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
             </section>
             <section><h4>版式</h4>
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><i class="l${i}"></i><em>${n}</em></button>`).join('')}</div>
@@ -575,7 +582,7 @@
                 const key = e.target.closest('.ar-img').dataset.k;
                 if (key === 'paperTex') {
                     // 自己的纸纹：存下来并直接换成「自己上传」
-                    st.paperTex = await shrink(e.target.files[0], 720);
+                    st.paperTex = await shrink(e.target.files[0], 1400);
                     st.paper = PAPERS.findIndex((x) => x[2] === 'upload');
                 } else {
                     const max = IMAGES.find((x) => x[1] === key)[3];
