@@ -199,7 +199,7 @@
     function sync() {
         if (themeOn()) {
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            doc.documentElement.dataset.arPv = '14';
+            doc.documentElement.dataset.arPv = '16';
             mount();
             body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
@@ -670,58 +670,53 @@
         '2. 回答选择题时，选出每小题答案后，用铅笔把答题卡上对应题目的答案标号涂黑。如需改动，用橡皮擦干净后，再选涂其他答案标号。回答非选择题时，将答案写在答题卡上。写在本试卷上无效。',
         '3. 考试结束后，将本试卷和答题卡一并交回。',
     ];
+    // 角色的每一条 = 一张完整的试卷（卷头、注意事项、大题小题标题、「阅读下面的文字……」，正文是阅读材料）；
+    // 你的每一条 = 一张答题卡（上面印着前一张试卷的三道题，正文是你的作答，框在答题区域里）。题号按角色的条数往下排
     function scratch() {
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
         const c = ctx();
-        const total = Array.isArray(c?.chat) ? c.chat.length : 0;
+        const chat = Array.isArray(c?.chat) ? c.chat : [];
         const p2 = (n) => String(n).padStart(2, '0');
+        // 第 i 条之前有几条角色的消息（i 是角色的话，它就是第几张试卷，从 0 数）
+        const before = [];
+        let papers = 0;
+        for (let i = 0; i < chat.length; i++) { before[i] = papers; if (!chat[i]?.is_user && !chat[i]?.is_system) papers++; }
+        const name = text('exam').trim() || '高三第三次模拟考试';
         for (const el of doc.querySelectorAll('#chat > .mes[mesid]')) {
             let sc = el.querySelector(':scope > .ar-scratch');
-            let ex = el.querySelector('.mes_block > .ar-exq');
+            for (const x of el.querySelectorAll('.mes_block > .ar-exq')) x.remove();
             if (!on) {
                 sc?.remove();
-                ex?.remove();
                 el.style.removeProperty('--ar-foot');
                 el.style.removeProperty('--ar-kh');
                 continue;
             }
             const id = Number(el.getAttribute('mesid'));
-            const d = c?.chat?.[id] ? when(c, c.chat[id]) : null;
+            const user = el.getAttribute('is_user') === 'true';
+            const d = chat[id] ? when(c, chat[id]) : null;
             const year = d ? d.getFullYear() : new Date().getFullYear();
-            // 页脚里的总页数会随着聊天变长而变，每次都写
-            el.style.setProperty('--ar-foot', q(`语文试题　第 ${id + 1} 页（共 ${Math.max(total, id + 1)} 页）`));
-            el.style.setProperty('--ar-kh', q(`${year}${p2((d ? d.getMonth() : 0) + 1)}${p2((id % 48) + 1)}`));
-            // 题号接着前面几张往下排：第 id 张是 3id+1 ～ 3id+3
-            const n0 = id * 3 + 1;
-            // 卷头只有第一张有，照真的模考卷：考试名称（style 卡里可以改，前面加年份）、「语文试卷」、试卷说明、注意事项，然后大题和小题的标题
-            const name = text('exam').trim() || '高三第三次模拟考试';
-            const pages = Math.max(total, id + 1);
-            const key = `${id}|${id === 0 ? `${year}|${name}|${pages}` : ''}`;
-            if (sc?.dataset.id !== key) {
-                if (!sc) {
-                    sc = doc.createElement('div');
-                    sc.className = 'ar-scratch';
-                    el.insertBefore(sc, el.querySelector(':scope > .mes_block') ?? null);
-                }
-                sc.dataset.id = key;
-                sc.innerHTML =
-                    (id === 0 ? `<div class="hd"><b>${year} 年${esc(name)}</b><em>语文试卷</em>` +
-                        `<p class="ds">（本试卷共 ${pages} 页，满分 150 分，考试时间 150 分钟。）</p>` +
-                        `<u>注意事项：</u>${EXAM_NOTES.map((t) => `<p class="nt">${t}</p>`).join('')}</div>` +
-                        `<p class="sec">一、现代文阅读（35 分）</p><p class="sub">（一）现代文阅读 I（本题共 3 小题，18 分）</p>` : '') +
+            // 试卷：这是第 k 张；答题卡：答的是它前面那一张（前面还没有试卷时答第一张）
+            const k = user ? Math.max(0, (before[id] ?? 1) - 1) : (before[id] ?? 0);
+            const n0 = k * 3 + 1;
+            const pages = Math.max(papers, k + 1);
+            el.style.setProperty('--ar-foot', q(user ? `语文答题卡　第 ${k + 1} 页` : `语文试题　第 ${k + 1} 页（共 ${pages} 页）`));
+            el.style.setProperty('--ar-kh', q(`${year}${p2((d ? d.getMonth() : 0) + 1)}${p2((k % 48) + 1)}`));
+            const key = `${id}|${user ? 'u' : 'c'}|${k}|${year}|${name}|${pages}`;
+            if (sc?.dataset.id === key) continue;
+            if (!sc) {
+                sc = doc.createElement('div');
+                sc.className = 'ar-scratch';
+                el.insertBefore(sc, el.querySelector(':scope > .mes_block') ?? null);
+            }
+            sc.dataset.id = key;
+            const qs = [0, 1, 2].map((t) => `<p class="q">${n0 + t}. ${EXAM_Q[(k * 3 + t) % EXAM_Q.length]}</p>`).join('');
+            sc.innerHTML = user
+                ? `<div class="hd"><em>语文答题卡</em><p class="ds">请在各题目的答题区域内作答，超出黑色矩形边框限定区域的答案无效。</p></div>${qs}`
+                : `<div class="hd"><b>${year} 年${esc(name)}</b><em>语文试卷</em>` +
+                    `<p class="ds">（本试卷共 ${pages} 页，满分 150 分，考试时间 150 分钟。）</p>` +
+                    `<u>注意事项：</u>${EXAM_NOTES.map((t) => `<p class="nt">${t}</p>`).join('')}</div>` +
+                    `<p class="sec">一、现代文阅读（35 分）</p><p class="sub">（一）现代文阅读 I（本题共 3 小题，18 分）</p>` +
                     `<p class="a">阅读下面的文字，完成 ${n0}～${n0 + 2} 题。</p>`;
-            }
-            const blk = el.querySelector(':scope > .mes_block');
-            if (blk && ex?.dataset.id !== String(id)) {
-                if (!ex) {
-                    ex = doc.createElement('div');
-                    ex.className = 'ar-exq';
-                }
-                ex.dataset.id = String(id);
-                ex.innerHTML = [0, 1, 2].map((k) => `<p>${n0 + k}. ${EXAM_Q[(id * 3 + k) % EXAM_Q.length]}</p>`).join('');
-            }
-            // 酒馆重画这一条时可能把它挤到中间或者丢掉：保证它一直是 .mes_block 里的最后一个
-            if (blk && ex && blk.lastElementChild !== ex) blk.append(ex);
         }
     }
 
@@ -931,7 +926,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.14</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.16</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-save"><input type="text" maxlength="12" placeholder="给现在这套配色起个名字"><button class="ar-btn" data-savescheme>存成方案</button></div>
