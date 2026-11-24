@@ -177,7 +177,10 @@
         doc.getElementById('ar-under')?.remove();
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
-        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-exq')) f.remove();
+        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-exq, .ar-fs')) f.remove();
+        reading(null);
+        texFixed = false;
+        clearFixTex();
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
         for (const x of doc.querySelectorAll('#chat > .mes')) { x.style.removeProperty('--ar-foot'); x.style.removeProperty('--ar-kh'); }
         doc.getElementById('ar-cover')?.remove();
@@ -199,7 +202,7 @@
     function sync() {
         if (themeOn()) {
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            doc.documentElement.dataset.arPv = '16';
+            doc.documentElement.dataset.arPv = '17';
             mount();
             body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
@@ -213,6 +216,8 @@
             scratch();
             indents();
             folio();
+            fsMarks();
+            fixTex();
             wall();
             topColor();
             cover();
@@ -766,6 +771,38 @@
         doc.documentElement.append(el);
     }
 
+    // ── 全屏读一张：每张纸右上角一个记号（两个对角），点了这一张单独拿出来铺在桌上；点桌面、按 Esc 或再点记号放回去 ──
+    function reading(el) {
+        const cur = doc.querySelector('#chat > .mes.ar-full');
+        cur?.classList.remove('ar-full');
+        if (!el || el === cur) { body.classList.remove('ar-reading'); return; }
+        el.classList.add('ar-full');
+        el.scrollTop = 0;
+        body.classList.add('ar-reading');
+    }
+    function fsMarks() {
+        for (const el of doc.querySelectorAll('#chat > .mes[mesid] .mes_buttons')) {
+            if (el.querySelector(':scope > .ar-fs')) continue;
+            const b = doc.createElement('div');
+            b.className = 'mes_button ar-fs';
+            b.title = '全屏';
+            b.setAttribute('role', 'button');
+            el.insertBefore(b, el.firstChild);
+        }
+    }
+    doc.addEventListener('click', (e) => {
+        if (!body.classList.contains('ar-tab')) return;
+        const b = e.target.closest?.('.ar-fs');
+        if (b) { e.preventDefault(); e.stopPropagation(); reading(b.closest('.mes')); return; }
+        // 全屏时点到纸外面（桌面）就放回去
+        if (body.classList.contains('ar-reading') && e.target.closest?.('#chat') && !e.target.closest('.mes.ar-full')) {
+            e.preventDefault();
+            e.stopPropagation();
+            reading(null);
+        }
+    }, true);
+    doc.addEventListener('keydown', (e) => { if (e.key === 'Escape' && body.classList.contains('ar-reading')) reading(null); });
+
     function undress() {
         for (const el of doc.querySelectorAll('#chat > .mes[data-ar-sig]')) {
             delete el.dataset.arSig;
@@ -805,20 +842,39 @@
             // 纸比图长的部分，接这张图上下翻过来的样子，接缝是对称的，看不出断开
             const src = s.paperTex;
             const k = Math.min(1, Math.max(.05, (s.texK ?? 100) / 100));
-            if (texSrc !== `${k}|${src}` || !texURL) {
+            // 固定在屏幕上（默认）：像毛玻璃美化的背景一样，图铺满一屏、不动，纸从上面滑过——纸再长也只露出这一屏的样子，永远不重复。
+            // 不固定：图跟着每张纸走，纸比图长的部分接上下翻转的同一张
+            const fixed = s.texFix !== false;
+            const mode = fixed ? 'f' : 'm';
+            if (texSrc !== `${mode}|${k}|${src}` || !texURL) {
                 // 新的一块还没做好时：先用原图（浓淡还没算进去），但别从别的图闪一下
                 if (!texSrc?.endsWith(`|${src}`)) root.setProperty('--ar-cotton', `url("${src}")`);
             } else root.setProperty('--ar-cotton', `url("${texURL}")`);
-            root.setProperty('--ar-cs', '100% auto');
-            root.setProperty('--ar-pp', '50% 0');
-            root.setProperty('--ar-cr', 'repeat-y');
-            paperTile(src, k).then((u) => {
+            if (fixed) {
+                root.setProperty('--ar-cr', 'no-repeat');
+                texFixed = true;
+                fixTex();
+            } else {
+                texFixed = false;
+                clearFixTex();
+                root.setProperty('--ar-cs', '100% auto');
+                root.setProperty('--ar-pp', '50% 0');
+                root.setProperty('--ar-cr', 'repeat-y');
+            }
+            paperTile(src, k, fixed).then((u) => {
                 const now = store() ?? {};
-                if (now.paperTex === src && (now.texK ?? 100) / 100 === (s.texK ?? 100) / 100 && (PAPERS[paperOf(now)] ?? PAPERS[0])[2] === 'upload') root.setProperty('--ar-cotton', `url("${u}")`);
+                if (now.paperTex === src && (now.texK ?? 100) / 100 === (s.texK ?? 100) / 100 && (now.texFix !== false) === fixed && (PAPERS[paperOf(now)] ?? PAPERS[0])[2] === 'upload') {
+                    root.setProperty('--ar-cotton', `url("${u}")`);
+                    if (fixed) fixTex(true);
+                }
             });
         }
         else root.removeProperty('--ar-cotton');
-        if (pp[2] !== 'upload' || !s.paperTex) for (const v of ['--ar-cs', '--ar-pp', '--ar-cr']) root.removeProperty(v);
+        if (pp[2] !== 'upload' || !s.paperTex) {
+            for (const v of ['--ar-cs', '--ar-pp', '--ar-cr']) root.removeProperty(v);
+            texFixed = false;
+            clearFixTex();
+        }
         // 有的纸纹要铺得比棉纸细（布纹的织纹）
         if (pp[3]) root.setProperty('--ar-cs', pp[3]);
         wall();
@@ -838,21 +894,23 @@
     // 上传的纸纹做成一块竖着的纸：横图先转成竖的（纸纹不分方向），下面接一份上下翻转的，
     // 这样纸比图长时接上去的地方是镜像对称的，没有一道接缝，也不是同一个方向的复制
     // k 是浓淡（0.05–1）：图上蒙一层白，k 越小越淡——花哨的图（壁纸之类）调淡了才不抢正文
-    let texURL = null, texSrc = null, texJob = null;
-    function paperTile(src, k = 1) {
-        const key = `${k}|${src}`;
+    let texURL = null, texSrc = null, texJob = null, texAspect = 1;
+    function paperTile(src, k = 1, fixed = false) {
+        const key = `${fixed ? 'f' : 'm'}|${k}|${src}`;
         if (texSrc === key && texURL) return Promise.resolve(texURL);
         if (texJob?.src === key) return texJob.p;
         const job = { src: key };
         job.p = new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
-                const land = img.width > img.height;
+                // 固定在屏幕上时：原样一张（不转、不接），只调浓淡
+                const land = !fixed && img.width > img.height;
                 const w = land ? img.height : img.width;
                 const h = land ? img.width : img.height;
+                if (fixed) texAspect = w / h;
                 const cv = doc.createElement('canvas');
                 cv.width = w;
-                cv.height = h * 2;
+                cv.height = fixed ? h : h * 2;
                 const c = cv.getContext('2d');
                 // 调淡：先降饱和度（彩色的图先变素），再蒙白；蒙白的量按 1 - k^1.5，往淡的那头走得快一些
                 if (k < 1) c.filter = `saturate(${k.toFixed(2)})`;
@@ -861,9 +919,9 @@
                     c.save(); c.translate(w, 0); c.rotate(Math.PI / 2); c.drawImage(img, 0, 0); c.restore();
                 };
                 draw();
-                c.save(); c.translate(0, h * 2); c.scale(1, -1); draw(); c.restore();
+                if (!fixed) { c.save(); c.translate(0, h * 2); c.scale(1, -1); draw(); c.restore(); }
                 c.filter = 'none';
-                if (k < 1) { c.fillStyle = `rgba(255,255,255,${(1 - k ** 1.5).toFixed(3)})`; c.fillRect(0, 0, w, h * 2); }
+                if (k < 1) { c.fillStyle = `rgba(255,255,255,${(1 - k ** 1.5).toFixed(3)})`; c.fillRect(0, 0, w, cv.height); }
                 cv.toBlob((b) => {
                     if (!b) return resolve(src);
                     if (texURL) URL.revokeObjectURL(texURL);
@@ -878,6 +936,37 @@
         texJob = job;
         return job.p;
     }
+
+    // 纸纹固定在屏幕上：图按屏幕大小铺满（cover），每张纸只露出它正好盖住的那一块。
+    // 浏览器自带的 background-attachment: fixed 在 iPhone 上不管用，所以自己算：每张纸的图往回挪它自己在屏幕上的位置
+    let texFixed = false, fixRaf = 0;
+    function fixTex(force = false) {
+        if (!texFixed) return;
+        if (fixRaf && !force) return;
+        // 页面在后台时 requestAnimationFrame 不走，换成定时器（不然切回来之前纸纹都对不上）
+        const later = doc.hidden ? (f) => setTimeout(f, 16) : requestAnimationFrame;
+        fixRaf = later(() => {
+            fixRaf = 0;
+            const W = innerWidth, H = innerHeight;
+            const a = texAspect || 1;
+            const sw = W / H > a ? W : H * a;
+            const sh = W / H > a ? W / a : H;
+            const ox = (W - sw) / 2, oy = (H - sh) / 2;
+            const root = doc.documentElement.style;
+            root.setProperty('--ar-cs', `${sw.toFixed(1)}px ${sh.toFixed(1)}px`);
+            root.setProperty('--ar-pp', `${ox.toFixed(1)}px ${oy.toFixed(1)}px`);
+            for (const el of doc.querySelectorAll('#chat > .mes')) {
+                const r = el.getBoundingClientRect();
+                if (r.bottom < -40 || r.top > H + 40) continue;
+                el.style.setProperty('--ar-pp', `${(ox - r.left).toFixed(1)}px ${(oy - r.top).toFixed(1)}px`);
+            }
+        });
+    }
+    function clearFixTex() {
+        for (const el of doc.querySelectorAll('#chat > .mes')) el.style.removeProperty('--ar-pp');
+    }
+    doc.getElementById('chat')?.addEventListener('scroll', () => fixTex(), { passive: true });
+    addEventListener('resize', () => fixTex(true));
 
     // 上传的图先缩小再存，免得设置文件太大
     function shrink(file, max, quality = 0.82) {
@@ -926,7 +1015,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.16</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.17</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-save"><input type="text" maxlength="12" placeholder="给现在这套配色起个名字"><button class="ar-btn" data-savescheme>存成方案</button></div>
@@ -936,6 +1025,7 @@
                 <div class="ar-papers">${PAPER_ORDER.map((i) => `<button data-paper="${i}"><i class="p${i}"></i><em>${PAPERS[i][0]}</em></button>`).join('')}</div>
                 <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（越大越清楚）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
                 <label class="ar-row ar-texk"><span>纸纹浓淡</span><input type="range" min="5" max="100" step="5" data-texk></label>
+                <label class="ar-row ar-check ar-texk"><input type="checkbox" data-texfix><span>纸纹固定在屏幕上，纸从上面滑过（图案不会重复）</span></label>
             </section>
             <section><h4>版式</h4>
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><i class="l${i}"></i><em>${n}</em></button>`).join('')}</div>
@@ -978,7 +1068,10 @@
                 row.hidden = l !== -1 && l !== (store()?.lay ?? 0);
             }
             const tk = p.querySelector('[data-texk]');
-            if (tk) { tk.value = String(store()?.texK ?? 100); tk.closest('.ar-texk').hidden = !store()?.paperTex; }
+            if (tk) tk.value = String(store()?.texK ?? 100);
+            for (const row of p.querySelectorAll('.ar-texk')) row.hidden = !store()?.paperTex;
+            const tf = p.querySelector('[data-texfix]');
+            if (tf) tf.checked = store()?.texFix !== false;
         };
         let texTimer = 0;
         p.addEventListener('input', (e) => {
@@ -1006,6 +1099,11 @@
         p.addEventListener('change', async (e) => {
             const st = store();
             if (!st) return;
+            if (e.target.dataset?.texfix !== undefined) {
+                st.texFix = e.target.checked;
+                applyStyle();
+                save();
+            }
             if (e.target.dataset?.cover !== undefined) {
                 st.cover = e.target.checked;
                 save();
@@ -1098,14 +1196,24 @@
     const et = c?.eventTypes ?? c?.event_types ?? {};
     if (es?.on) {
         for (const k of ['CHAT_CHANGED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_DELETED', 'CHARACTER_EDITED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_UPDATED', 'CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MORE_MESSAGES_LOADED']) {
-            if (et[k]) es.on(et[k], () => { sync(); fill(); setTimeout(() => { dress(); scratch(); indents(); folio(); }, 60); });
+            if (et[k]) es.on(et[k], () => { sync(); fill(); setTimeout(() => { dress(); scratch(); indents(); folio(); fsMarks(); fixTex(true); }, 60); });
         }
         // 发出去之后、换聊天时把工具格收起来
         for (const k of ['MESSAGE_SENT', 'CHAT_CHANGED']) {
             if (et[k]) es.on(et[k], () => { if (empty()) memo(false); });
         }
+        // 换聊天时退出全屏
+        if (et.CHAT_CHANGED) es.on(et.CHAT_CHANGED, () => reading(null));
     }
 
     sync();
+    // 刚打开酒馆时主题样式可能晚一点点才到：前十秒每 150ms 看一次，封面能多早出来就多早出来
+    {
+        let n = 0;
+        const early = setInterval(() => {
+            if (doc.getElementById('ar-cover') || coverDone || ++n > 66) { clearInterval(early); return; }
+            if (themeOn()) sync();
+        }, 150);
+    }
     setInterval(sync, 1500);
 })();
