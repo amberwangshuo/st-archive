@@ -167,6 +167,7 @@
         doc.getElementById('ar-under')?.remove();
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
+        for (const f of doc.querySelectorAll('.ar-folio')) f.remove();
         doc.getElementById('ar-fonts-cn')?.remove();
         doc.getElementById('ar-fonts')?.remove();
         doc.getElementById('ar-style')?.remove();
@@ -189,6 +190,7 @@
             body.classList.toggle('ar-home', home());
             gatherTools();
             dress();
+            folio();
             wall();
             letters();
         } else if (body.classList.contains('ar-tab')) {
@@ -350,12 +352,14 @@
     // 可以改的几行字：键、说明、默认值、是不是多行
     const TEXTS = [
         ['title', '刊物的标题（{n} 是英文数字，{no} 是阿拉伯数字）', 'Page {n}', false],
-        ['addr', '信头的地址行', 'Private Archive', false],
+        ['addr', '角色来信的地址', '19 Rue des Archives, 75004 Paris', false],
+        ['addr2', '你回信的地址', '7 Rue Barbette, 75003 Paris', false],
         ['dear', '信的称呼（{name} 是对方的名字）', 'Dear {name},', false],
         ['open1', '角色来信的开场白', '在我所感与我所写之间，永远横亘着一道无法跨越的距离。所以如果这封信显得有些笨拙，请原谅。', true],
         ['close1', '角色来信的落款', 'Nothing new...\nEver yours,', true],
         ['open2', '你回信的开场白', '我想作诗，写雨，写夜的相思，写你，写不出。', true],
         ['close2', '你回信的落款', 'Yours ever, fair Star,', true],
+        ['idle', '输入框收起时的那一句', '从前的日色变得慢，车，马，邮件都慢', false],
     ];
 
     const store = () => {
@@ -369,6 +373,8 @@
             if (s.images) { delete s.images.sq1; delete s.images.sq2; }
             s.v = 2;
         }
+        // 0.10.1：信头地址的默认值从 Private Archive 换成真的地址，旧的默认值别留着
+        if (s.texts?.addr === 'Private Archive') delete s.texts.addr;
         return s;
     };
     const save = () => ctx()?.saveSettingsDebounced?.();
@@ -413,7 +419,7 @@
         }
         return d;
     }
-    const PROPS = ['--ar-no', '--ar-date', '--ar-time', '--ar-stamp', '--ar-datel', '--ar-sheet', '--ar-title', '--ar-dear', '--ar-open', '--ar-close', '--ar-name', '--ar-prev', '--ar-next', '--ar-pic'];
+    const PROPS = ['--ar-no', '--ar-date', '--ar-time', '--ar-stamp', '--ar-datel', '--ar-sheet', '--ar-title', '--ar-dear', '--ar-open', '--ar-close', '--ar-name', '--ar-addr', '--ar-pic'];
     function dress() {
         if (!body.classList.contains('ar-tab')) return;
         const c = ctx();
@@ -431,7 +437,6 @@
             const time = d ? `${p2(d.getHours())}:${p2(d.getMinutes())}` : '';
             const sw = Array.isArray(m.swipes) && m.swipes.length ? m.swipes.length : 1;
             const si = m.swipe_id ?? 0;
-            const last = el.classList.contains('last_mes') && !user;
             const img = el.querySelector('.mesAvatarWrapper .avatar img');
             const v = [
                 q(id), q(date), q(time),
@@ -443,8 +448,7 @@
                 q(user ? t.open2 : t.open1),
                 q(user ? t.close2 : t.close1),
                 q(el.getAttribute('ch_name') || ''),
-                q(last && si > 0 ? si : ''),
-                q(last && si + 1 < sw ? si + 2 : ''),
+                q(user ? t.addr2 : t.addr),
                 img?.getAttribute('src') ? `url("${fullPic(img.getAttribute('src'))}")` : 'none',
             ];
             const sig = v.join('|');
@@ -453,6 +457,58 @@
             PROPS.forEach((k, i) => el.style.setProperty(k, v[i]));
         }
     }
+    // 翻页：杂志的页码。最后一张角色的纸右下角一排页码，现在这一稿是 .on；
+    // 正停在最后一稿时，后面多一个淡的号码 .new（点它 = 酒馆的右翻 = 重新生成）。稿多时只列现在这一稿前后五个
+    function folio() {
+        const c = ctx();
+        if (!c || !Array.isArray(c.chat)) return;
+        const on = body.classList.contains('ar-tab') && !body.classList.contains('hideAllSwipeButtons');
+        for (const el of doc.querySelectorAll('#chat > .mes[mesid]')) {
+            const m = c.chat[Number(el.getAttribute('mesid'))];
+            let f = el.querySelector(':scope > .ar-folio');
+            const show = on && m && el.classList.contains('last_mes') && el.getAttribute('is_user') !== 'true' && el.matches('.swipes_visible, .last_swipe');
+            if (!show) { f?.remove(); continue; }
+            const sw = Array.isArray(m.swipes) && m.swipes.length ? m.swipes.length : 1;
+            const si = Math.min(m.swipe_id ?? 0, sw - 1);
+            const more = el.classList.contains('last_swipe') && si === sw - 1;
+            const sig = `${si}/${sw}/${more}`;
+            if (f?.dataset.sig === sig) continue;
+            if (!f) {
+                f = doc.createElement('div');
+                f.className = 'ar-folio';
+                el.appendChild(f);
+            }
+            f.dataset.sig = sig;
+            const from = Math.max(0, Math.min(si - 2, sw - 5));
+            const to = Math.min(sw - 1, from + 4);
+            const n2 = (n) => String(n).padStart(2, '0');
+            let h = '';
+            for (let i = from; i <= to; i++) h += `<button type="button" data-i="${i}"${i === si ? ' class="on" aria-current="page"' : ''}>${n2(i + 1)}</button>`;
+            if (more) h += `<button type="button" class="new" data-i="${sw}">${n2(sw + 1)}</button>`;
+            f.innerHTML = h;
+        }
+    }
+    doc.addEventListener('click', (e) => {
+        const b = e.target.closest?.('.ar-folio button');
+        if (!b) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const el = b.closest('.mes');
+        const c = ctx();
+        const m = c?.chat?.[Number(el?.getAttribute('mesid'))];
+        if (!m) return;
+        const cur = m.swipe_id ?? 0;
+        const n = Number(b.dataset.i);
+        if (n === cur) return;
+        const dir = n > cur ? 'right' : 'left';
+        // 相邻的一稿（包括重新生成）：按酒馆自己的箭头；隔着几稿：直接跳过去
+        if (Math.abs(n - cur) === 1 || typeof c.swipe?.to !== 'function') {
+            el.querySelector(dir === 'right' ? '.swipe_right' : '.swipe_left')?.click();
+        } else {
+            c.swipe.to(null, dir, { forceSwipeId: n, source: 'swipe_picker' });
+        }
+    }, true);
+
     function undress() {
         for (const el of doc.querySelectorAll('#chat > .mes[data-ar-sig]')) {
             delete el.dataset.arSig;
@@ -480,17 +536,27 @@
         // 版式、底图用不用酒馆自己的背景、信头的地址行
         for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, (LAYOUTS[s.lay ?? 0] ?? LAYOUTS[0])[1] === cls);
         body.classList.toggle('ar-bg-st', !!s.bgST);
-        root.setProperty('--ar-addr', q(text('addr')));
+        root.setProperty('--ar-idle', q(text('idle')));
         // 纸纹
         const pp = PAPERS[s.paper ?? 0] ?? PAPERS[0];
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
         else if (pp[2] === 'upload' && s.paperTex) {
-            // 自己上传的纸纹：铺满每张纸（等比例放大，多出来的裁掉），不重复平铺
-            root.setProperty('--ar-cotton', `url("${s.paperTex}")`);
-            root.setProperty('--ar-cs', 'cover');
-            root.setProperty('--ar-pp', '50% 50%');
-            root.setProperty('--ar-cr', 'no-repeat');
+            // 自己上传的纸纹：宽度对齐每张纸（只会缩小、不会放大，所以不糊）；
+            // 纸比图长的部分，接这张图上下翻过来的样子，接缝是对称的，看不出断开
+            const src = s.paperTex;
+            const k = Math.min(1, Math.max(.05, (s.texK ?? 100) / 100));
+            if (texSrc !== `${k}|${src}` || !texURL) {
+                // 新的一块还没做好时：先用原图（浓淡还没算进去），但别从别的图闪一下
+                if (!texSrc?.endsWith(`|${src}`)) root.setProperty('--ar-cotton', `url("${src}")`);
+            } else root.setProperty('--ar-cotton', `url("${texURL}")`);
+            root.setProperty('--ar-cs', '100% auto');
+            root.setProperty('--ar-pp', '50% 0');
+            root.setProperty('--ar-cr', 'repeat-y');
+            paperTile(src, k).then((u) => {
+                const now = store() ?? {};
+                if (now.paperTex === src && (now.texK ?? 100) / 100 === (s.texK ?? 100) / 100 && (PAPERS[now.paper ?? 0] ?? PAPERS[0])[2] === 'upload') root.setProperty('--ar-cotton', `url("${u}")`);
+            });
         }
         else root.removeProperty('--ar-cotton');
         if (pp[2] !== 'upload' || !s.paperTex) for (const v of ['--ar-cs', '--ar-pp', '--ar-cr']) root.removeProperty(v);
@@ -502,14 +568,58 @@
         const root = doc.documentElement.style;
         for (const [v] of VARS) root.removeProperty(v);
         for (const [v] of IMAGES) root.removeProperty(v);
-        for (const v of ['--ar-cn', '--ar-tw', '--ar-addr', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-pp', '--ar-cr', '--ar-wall']) root.removeProperty(v);
+        for (const v of ['--ar-cn', '--ar-tw', '--ar-idle', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-pp', '--ar-cr', '--ar-wall']) root.removeProperty(v);
         for (const [, cls] of LAYOUTS) if (cls) body.classList.remove(cls);
         body.classList.remove('ar-bg-st');
         undress();
     }
 
+    // 上传的纸纹做成一块竖着的纸：横图先转成竖的（纸纹不分方向），下面接一份上下翻转的，
+    // 这样纸比图长时接上去的地方是镜像对称的，没有一道接缝，也不是同一个方向的复制
+    // k 是浓淡（0.05–1）：图上蒙一层白，k 越小越淡——花哨的图（壁纸之类）调淡了才不抢正文
+    let texURL = null, texSrc = null, texJob = null;
+    function paperTile(src, k = 1) {
+        const key = `${k}|${src}`;
+        if (texSrc === key && texURL) return Promise.resolve(texURL);
+        if (texJob?.src === key) return texJob.p;
+        const job = { src: key };
+        job.p = new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                const land = img.width > img.height;
+                const w = land ? img.height : img.width;
+                const h = land ? img.width : img.height;
+                const cv = doc.createElement('canvas');
+                cv.width = w;
+                cv.height = h * 2;
+                const c = cv.getContext('2d');
+                // 调淡：先降饱和度（彩色的图先变素），再蒙白；蒙白的量按 1 - k^1.5，往淡的那头走得快一些
+                if (k < 1) c.filter = `saturate(${k.toFixed(2)})`;
+                const draw = () => {
+                    if (!land) { c.drawImage(img, 0, 0); return; }
+                    c.save(); c.translate(w, 0); c.rotate(Math.PI / 2); c.drawImage(img, 0, 0); c.restore();
+                };
+                draw();
+                c.save(); c.translate(0, h * 2); c.scale(1, -1); draw(); c.restore();
+                c.filter = 'none';
+                if (k < 1) { c.fillStyle = `rgba(255,255,255,${(1 - k ** 1.5).toFixed(3)})`; c.fillRect(0, 0, w, h * 2); }
+                cv.toBlob((b) => {
+                    if (!b) return resolve(src);
+                    if (texURL) URL.revokeObjectURL(texURL);
+                    texURL = URL.createObjectURL(b);
+                    texSrc = key;
+                    resolve(texURL);
+                }, 'image/jpeg', 0.92);
+            };
+            img.onerror = () => resolve(src);
+            img.src = src;
+        });
+        texJob = job;
+        return job.p;
+    }
+
     // 上传的图先缩小再存，免得设置文件太大
-    function shrink(file, max) {
+    function shrink(file, max, quality = 0.82) {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.onload = () => {
@@ -519,7 +629,7 @@
                 cv.height = Math.round(img.height * k);
                 cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
                 URL.revokeObjectURL(img.src);
-                resolve(cv.toDataURL('image/jpeg', 0.82));
+                resolve(cv.toDataURL('image/jpeg', quality));
             };
             img.onerror = reject;
             img.src = URL.createObjectURL(file);
@@ -549,7 +659,8 @@
             </section>
             <section><h4>纸纹</h4>
                 <div class="ar-papers">${PAPERS.map(([n], i) => `<button data-paper="${i}"><i class="p${i}"></i><em>${n}</em></button>`).join('')}</div>
-                <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（等比例铺满每张纸，浅色的图最好）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
+                <div class="ar-img ar-row" data-k="paperTex"><span>上传一张纸纹（越大越清楚）</span><label class="ar-btn">选图<input type="file" accept="image/*" hidden></label></div>
+                <label class="ar-row ar-texk"><span>纸纹浓淡</span><input type="range" min="5" max="100" step="5" data-texk></label>
             </section>
             <section><h4>版式</h4>
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}"><i class="l${i}"></i><em>${n}</em></button>`).join('')}</div>
@@ -584,12 +695,22 @@
             for (const inp of p.querySelectorAll('[data-t]')) inp.value = text(inp.dataset.t);
             const bg = p.querySelector('[data-bgst]');
             if (bg) bg.checked = !!store()?.bgST;
+            const tk = p.querySelector('[data-texk]');
+            if (tk) { tk.value = String(store()?.texK ?? 100); tk.closest('.ar-texk').hidden = !store()?.paperTex; }
         };
+        let texTimer = 0;
         p.addEventListener('input', (e) => {
             const st = store();
             if (!st) return;
             const v = e.target.dataset?.v;
             const t = e.target.dataset?.t;
+            if (e.target.dataset?.texk !== undefined) {
+                // 拖动时每次都重做一整张图太慢：停下来 120ms 再算
+                st.texK = Number(e.target.value);
+                clearTimeout(texTimer);
+                texTimer = setTimeout(() => { applyStyle(); save(); }, 120);
+                return;
+            }
             if (v) {
                 st.colors ??= {};
                 st.colors[v] = e.target.value;
@@ -617,7 +738,9 @@
                 const key = e.target.closest('.ar-img').dataset.k;
                 if (key === 'paperTex') {
                     // 自己的纸纹：存下来并直接换成「自己上传」
-                    st.paperTex = await shrink(e.target.files[0], 1400);
+                    // 纸纹要清楚：最长边留到 2400（手机屏是两三倍像素，1400 不够），原图小就不动
+                    st.paperTex = await shrink(e.target.files[0], 2400, 0.9);
+                    delete st.texK;
                     st.paper = PAPERS.findIndex((x) => x[2] === 'upload');
                 } else {
                     const max = IMAGES.find((x) => x[1] === key)[3];
@@ -659,7 +782,7 @@
                 if (st.images) delete st.images[b.dataset.reset];
             } else if (b.dataset.all !== undefined) {
                 // 自己存的配色方案留着，别的都回到默认
-                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.bgST; delete st.texts; delete st.paper;
+                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.bgST; delete st.texts; delete st.paper; delete st.texK;
             } else return;
             applyStyle();
             save();
@@ -687,7 +810,7 @@
     const et = c?.eventTypes ?? c?.event_types ?? {};
     if (es?.on) {
         for (const k of ['CHAT_CHANGED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_DELETED', 'CHARACTER_EDITED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_UPDATED', 'CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MORE_MESSAGES_LOADED']) {
-            if (et[k]) es.on(et[k], () => { sync(); fill(); setTimeout(dress, 60); });
+            if (et[k]) es.on(et[k], () => { sync(); fill(); setTimeout(() => { dress(); folio(); }, 60); });
         }
         // 发出去之后、换聊天时把工具格收起来
         for (const k of ['MESSAGE_SENT', 'CHAT_CHANGED']) {
