@@ -452,6 +452,7 @@
         ['close1', '角色来信的落款', 'Nothing new...\nEver yours,', true, 2],
         ['open2', '你回信的开场白', '我想作诗，写雨，写夜的相思，写你，写不出。', true, 2],
         ['close2', '你回信的落款', 'Yours ever, fair Star,', true, 2],
+        ['exam', '答卷的卷头（考试名称，比如 语文周测、十一月月考）', '语文周测', false, 3],
         ['idle', '输入框收起时的那一句', '从前的日色变得慢，车，马，邮件都慢', false, -1],
     ];
 
@@ -661,11 +662,6 @@
         '如果为本文拟一个标题，你会怎样拟？请说明理由。（4 分）',
         '文中的叙述视角有什么特点？这种视角对读者的感受有什么影响？（6 分）',
     ];
-    const EXAM_NOTES = [
-        '1. 答卷前，考生务必将自己的姓名、准考证号填写在答题卡上。',
-        '2. 回答非选择题时，将答案写在答题卡上，写在本试卷上无效。',
-        '3. 考试结束后，将本试卷和答题卡一并交回。',
-    ];
     function scratch() {
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
         const c = ctx();
@@ -686,18 +682,23 @@
             const year = d ? d.getFullYear() : new Date().getFullYear();
             // 页脚里的总页数会随着聊天变长而变，每次都写
             el.style.setProperty('--ar-foot', q(`语文试题　第 ${id + 1} 页（共 ${Math.max(total, id + 1)} 页）`));
-            el.style.setProperty('--ar-kh', q(`${d ? `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}` : '00000000'}${String(id + 1).padStart(4, '0')}`));
+            el.style.setProperty('--ar-kh', q(p2((id % 48) + 1)));
             // 题号接着前面几张往下排：第 id 张是 3id+1 ～ 3id+3
             const n0 = id * 3 + 1;
-            if (sc?.dataset.id !== String(id)) {
+            // 卷头只有第一张有：学年学期（九月到一月是第一学期，其余是第二学期）、考试名称（style 卡里可以改）、时间和满分
+            const mo = d ? d.getMonth() + 1 : new Date().getMonth() + 1;
+            const term = mo >= 9 ? `${year}—${year + 1} 学年度第一学期` : mo === 1 ? `${year - 1}—${year} 学年度第一学期` : `${year - 1}—${year} 学年度第二学期`;
+            const name = text('exam').trim() || '语文周测';
+            const key = `${id}|${id === 0 ? `${term}|${name}` : ''}`;
+            if (sc?.dataset.id !== key) {
                 if (!sc) {
                     sc = doc.createElement('div');
                     sc.className = 'ar-scratch';
                     el.insertBefore(sc, el.querySelector(':scope > .mes_block') ?? null);
                 }
-                sc.dataset.id = String(id);
+                sc.dataset.id = key;
                 sc.innerHTML =
-                    (id === 0 ? `<div class="hd"><i>绝密★启用前</i><b>${year} 年普通高等学校招生全国统一考试</b><em>语文</em><u>注意事项</u>${EXAM_NOTES.map((t) => `<p>${t}</p>`).join('')}</div><p class="sec">现代文阅读</p>` : '') +
+                    (id === 0 ? `<div class="hd"><b>${term}</b><em>${esc(name)}</em><p>（时间：40 分钟　满分：50 分）</p></div><p class="sec">现代文阅读</p>` : '') +
                     `<p class="a">阅读下面的文字，完成 ${n0}～${n0 + 2} 题。</p>`;
             }
             const blk = el.querySelector(':scope > .mes_block');
