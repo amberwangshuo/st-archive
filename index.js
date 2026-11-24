@@ -181,6 +181,8 @@
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
         doc.getElementById('ar-font-hand')?.remove();
         doc.getElementById('ar-cover')?.remove();
+        delete doc.documentElement.dataset.arPv;
+        doc.documentElement.style.removeProperty('--ar-vh');
         doc.documentElement.style.removeProperty('--ar-top');
         if (themeColor0 !== null) doc.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor0);
         topKey = '';
@@ -196,6 +198,8 @@
     // 主题可能随时被换掉，过一会儿看一次
     function sync() {
         if (themeOn()) {
+            // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
+            doc.documentElement.dataset.arPv = '14';
             mount();
             body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
@@ -305,6 +309,17 @@
             sb.content = 'black-translucent';
             doc.head.append(sb);
         }
+        // iOS 从主屏幕图标打开、状态栏透明时，100dvh 比屏幕矮一条状态栏：把真正的屏幕高度写给主题
+        const probe = doc.createElement('i');
+        probe.style.cssText = 'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top,0px)';
+        doc.documentElement.append(probe);
+        const sat = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+        probe.remove();
+        if (navigator.standalone === true && sat > 0) {
+            const portrait = matchMedia('(orientation: portrait)').matches;
+            const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+            root.style.setProperty('--ar-vh', `${full}px`);
+        } else root.style.removeProperty('--ar-vh');
         if (!m) { root.style.removeProperty('--ar-top'); return; }
         const img = new Image();
         img.crossOrigin = 'anonymous';
@@ -406,15 +421,15 @@
         ['布纹信纸', '', '--ar-linen', '190px 190px'],
     ];
     const PAPER_ORDER = [0, 6, 7, 1, 2, 3, 4, 5];
-    // 每种版式默认配的纸：图录页 棉纸、刊物 书纸、信 布纹信纸、草稿 方格；在哪种版式下选的纸只记给那种版式
-    const PAPER_DEF = [0, 6, 7, 2];
+    // 每种版式默认配的纸：图录页 棉纸、刊物 书纸、信 布纹信纸、答卷 素白；在哪种版式下选的纸只记给那种版式
+    const PAPER_DEF = [0, 6, 7, 4];
     const paperOf = (s) => s?.papers?.[s.lay ?? 0] ?? PAPER_DEF[s?.lay ?? 0] ?? 0;
     // 每张纸的版式：名字、body 上的 class
     const LAYOUTS = [
         ['图录页', ''],
         ['刊物', 'ar-lay-b'],
         ['信', 'ar-lay-c'],
-        ['草稿', 'ar-lay-d'],
+        ['答卷', 'ar-lay-d'],
     ];
     const IMAGES = [
         ['--ar-shadow', 'desk', '底图（台面）', 1600],
@@ -429,6 +444,7 @@
     // 可以改的几行字：键、说明、默认值、是不是多行
     const TEXTS = [
         ['title', '刊物的标题', '无题', false, 1],
+        ['epi', '刊物的题记（署名下面那一小段，留空就没有）', '草在结它的种子，风在摇它的叶子，我们站着，不说话，就十分美好。', true, 1],
         ['addr', '角色来信的地址', '19 Rue des Archives, 75004 Paris', false, 2],
         ['addr2', '你回信的地址', '7 Rue Barbette, 75003 Paris', false, 2],
         ['dear', '信的称呼（{name} 是对方的名字）', 'Dear {name},', false, 2],
@@ -628,29 +644,18 @@
         }
     }, true);
 
-    // ── 版式四 · 草稿：每张纸最上面印一道数学题，下面是铅笔写的几步演算（没做完）。十道题按消息编号轮着出 ──
-    // q 是题（<i> 是斜体的字母），w 是演算的几行：<span class="c"> 圈起来、<span class="x"> 划掉、<span class="u"> 下面画两道
-    const SCRATCH = [
-        ['已知函数 <i>f</i>(<i>x</i>) = <i>x</i>³ − 3<i>x</i> + 1，求 <i>f</i>(<i>x</i>) 在区间 [−2, 2] 上的最大值与最小值。',
-            ['<span class="x">f \'(x) = 3x² − 3x</span>', 'f \'(x) = 3x² − 3 = 0 , <span class="c">x = ±1</span>', 'f(−1) = 3 , f(1) = −1', 'f(−2) = −8 + 6 + 1 = −1 , f(2) = ?']],
-        ['等差数列 {<i>a</i><sub>n</sub>} 中，<i>a</i><sub>3</sub> = 7，<i>a</i><sub>7</sub> = 19，求前 10 项和 <i>S</i><sub>10</sub>。',
-            ['4d = 19 − 7 = 12 , <span class="c">d = 3</span>', 'a1 = 7 − 2d = 1', 'S10 = 10·a1 + 45d = <span class="u">10 + 45·3</span> = ...']],
-        ['袋中有 3 个红球、2 个白球，不放回地依次取出 2 个，求两球颜色不同的概率。',
-            ['<span class="x">P = 3/5 · 2/5</span>', 'P = (3·2 + 2·3) / (5·4)', '= <span class="c">12 / 20</span> = ?']],
-        ['在 △<i>ABC</i> 中，<i>a</i> = 7，<i>b</i> = 5，<i>c</i> = 3，求角 <i>A</i> 的大小。',
-            ['cos A = (b² + c² − a²) / 2bc', '= (25 + 9 − 49) / 30', '= <span class="c">−1/2</span>', 'A = ...']],
-        ['求不等式 <i>x</i>² − 5<i>x</i> + 6 &lt; 0 的解集。',
-            ['(x − 2)(x − 3) &lt; 0', '<span class="x">x &lt; 2 , x &gt; 3</span>', '<span class="u">2 &lt; x</span> ...']],
-        ['已知 sin <i>A</i> = 3/5，且 <i>A</i> 为第二象限角，求 tan 2<i>A</i> 的值。',
-            ['cos A = <span class="c">−4/5</span>', 'tan A = −3/4', 'tan 2A = 2 tan A / (1 − tan² A)', '= (−3/2) / (1 − 9/16) = ...']],
-        ['直线 <i>y</i> = <i>x</i> + <i>m</i> 与圆 <i>x</i>² + <i>y</i>² = 2 相切，求实数 <i>m</i> 的值。',
-            ['d = |m| / √2 = r', 'r = √2', '<span class="c">|m| = 2</span>', 'm = ?']],
-        ['求函数 <i>y</i> = <i>x</i> + 4/<i>x</i>（<i>x</i> &gt; 0）的最小值。',
-            ['<span class="x">y\' = 1 + 4/x²</span>', 'x + 4/x ≥ 2·√(x · 4/x)', 'x = 4/x , <span class="c">x = 2</span>', 'y min = ...']],
-        ['已知向量 <b>a</b> = (1, 2)，<b>b</b> = (<i>x</i>, −1)，若 <b>a</b> ⊥ <b>b</b>，求 |<b>a</b> + <b>b</b>|。',
-            ['a·b = x − 2 = 0 , <span class="c">x = 2</span>', 'a + b = (3, 1)', '|a + b| = √(9 + 1) = ...']],
-        ['计算定积分 ∫<sub>0</sub><sup>1</sup> (3<i>x</i>² + 2<i>x</i>) d<i>x</i>。',
-            ['[ x³ + x² ]  0 → 1', '<span class="x">= 3 + 2</span>', '= <span class="u">(1 + 1) − 0</span> = ...']],
+    // ── 版式四 · 答卷：每张纸最上面印一道题（命题作文、历史论述、政治论述），正文就是答案；右上角是红笔的分数。九道题按消息编号轮着出 ──
+    // 每道：满分、题干、材料（楷体，可以没有）、要求
+    const EXAM = [
+        [60, '阅读下面的材料，根据要求写作。', '有人说，记住一个人，是从记住他说话的语气开始的。', '要求：自拟题目，自选角度，文体不限；不少于 800 字。'],
+        [12, '阅读材料，完成下列要求。', '有学者认为，历史不只写在大事里，也写在一顿饭、一封信、一次告别里。', '要求：围绕材料提炼一个观点，结合所学加以论述。观点明确，史论结合。'],
+        [10, '结合材料，运用“矛盾的普遍性与特殊性”的知识，说明应当怎样看待人与人之间的不同。', '', '要求：条理清楚，言之有据。'],
+        [60, '阅读下面的材料，根据要求写作。', '同一条路，去的时候和回来的时候，看见的东西并不一样。', '要求：自拟题目，自选角度，文体不限；不少于 800 字。'],
+        [12, '阅读材料，完成下列要求。', '书信曾是人们相隔两地时最主要的联系方式。一封信从写下到送达，短则数日，长则数月。', '要求：从“通信方式的变迁”中任选一个角度，自拟论题并加以阐述。'],
+        [10, '结合材料，运用“量变与质变”的知识，谈谈两个人的关系是怎样一点一点改变的。', '', '要求：观点正确，层次分明。'],
+        [60, '以“那一天之后”为题，写一篇文章。', '', '要求：文体不限，诗歌除外；不少于 800 字。'],
+        [12, '阅读材料，完成下列要求。', '一座城市的记忆，往往保存在最普通的地方：一个车站，一家旧书店，一条走过很多遍的街。', '要求：结合材料与所学，以“城市与记忆”为主题写一则短论。'],
+        [10, '结合材料，运用“意识的能动作用”的知识，说明为什么人会一再想起已经过去的事。', '', '要求：紧扣材料，逻辑清晰。'],
     ];
     function scratch() {
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
@@ -660,15 +665,16 @@
             if (!on) { sc?.remove(); continue; }
             const id = Number(el.getAttribute('mesid'));
             if (sc?.dataset.id === String(id)) continue;
-            const [q, w] = SCRATCH[id % SCRATCH.length];
+            const [full, stem, mat, req] = EXAM[id % EXAM.length];
+            // 分数：每一条固定（由编号算出来），在满分的八成上下
+            const score = Math.max(1, Math.round(full * (0.74 + ((id * 37) % 19) / 100)));
             if (!sc) {
                 sc = doc.createElement('div');
                 sc.className = 'ar-scratch';
-                const blk = el.querySelector(':scope > .mes_block');
-                el.insertBefore(sc, blk ?? null);
+                el.insertBefore(sc, el.querySelector(':scope > .mes_block') ?? null);
             }
             sc.dataset.id = String(id);
-            sc.innerHTML = `<p class="q"><b>${id + 1}.</b>（本小题满分 12 分）${q}</p><div class="w">${w.map((x) => `<p>${x}</p>`).join('')}</div>`;
+            sc.innerHTML = `<p class="q"><b>${id + 1}.</b>（${full} 分）${stem}</p>${mat ? `<p class="m">${mat}</p>` : ''}<p class="r">${req}</p><span class="score">${score}</span>`;
         }
     }
 
@@ -746,6 +752,7 @@
         for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, (LAYOUTS[s.lay ?? 0] ?? LAYOUTS[0])[1] === cls);
         body.classList.toggle('ar-bg-st', !!s.bgST);
         root.setProperty('--ar-idle', q(text('idle')));
+        if (text('epi').trim()) root.setProperty('--ar-epi', q(text('epi'))); else root.removeProperty('--ar-epi');
         // 纸纹
         const pp = PAPERS[paperOf(s)] ?? PAPERS[0];
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
@@ -780,7 +787,7 @@
         const root = doc.documentElement.style;
         for (const [v] of VARS) root.removeProperty(v);
         for (const [v] of IMAGES) root.removeProperty(v);
-        for (const v of ['--ar-cn', '--ar-tw', '--ar-idle', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-pp', '--ar-cr', '--ar-wall']) root.removeProperty(v);
+        for (const v of ['--ar-cn', '--ar-tw', '--ar-idle', '--ar-epi', '--ar-vh', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-pp', '--ar-cr', '--ar-wall']) root.removeProperty(v);
         for (const [, cls] of LAYOUTS) if (cls) body.classList.remove(cls);
         body.classList.remove('ar-bg-st');
         undress();
@@ -877,7 +884,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>SWATCH CARD</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.14</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-save"><input type="text" maxlength="12" placeholder="给现在这套配色起个名字"><button class="ar-btn" data-savescheme>存成方案</button></div>
