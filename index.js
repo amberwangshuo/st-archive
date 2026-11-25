@@ -179,7 +179,7 @@
         doc.getElementById('ar-under')?.remove();
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
-        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-fs, .ar-back')) f.remove();
+        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-fs')) f.remove();
         frames(true);
         body.classList.remove('ar-immersive');
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
@@ -209,7 +209,6 @@
             if (!body.classList.contains('ar-tab')) return;
             dress();
             scratch();
-            backs();
             indents();
             folio();
             fsMarks();
@@ -260,7 +259,7 @@
         if (on) {
             const first = !body.classList.contains('ar-tab');
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            if (doc.documentElement.dataset.arPv !== '27') doc.documentElement.dataset.arPv = '27';
+            if (doc.documentElement.dataset.arPv !== '28') doc.documentElement.dataset.arPv = '28';
             mount();
             // 已经有就别再 add：classList.add 即使没变也算改了一次 class，挂在 body 上的监听（酒馆和别的扩展的）每次都被叫醒，
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
@@ -541,10 +540,11 @@
         // 后加的排在最后（存的是序号，前面的不能动）；style 卡里按 PAPER_ORDER 排
         // v49（第 48 轮她挑的纸）：书纸换成米白书纸、布纹信纸换成象牙白信笺；新加哑粉纸（拍卖图录用的）、试卷纸（干净、带一丢丢暖黄）。
         // 新的三张图是 840 的无缝小图，铺成 580px 宽，颗粒和样张里一样大
-        ['书纸', '', '--ar-book', '580px 580px'],
+        // v57：书纸、试卷纸是整页的图，图里自带淡淡的透字（背面印的字），按纸的宽度铺、上下重复
+        ['书纸', '', '--ar-book', '100% auto', 'repeat-y'],
         ['信笺', '', '--ar-linen', '580px 580px'],
         ['哑粉纸', '', '--ar-matte', '580px 580px'],
-        ['试卷纸', '', 'tint:#FDFCF8'],
+        ['试卷纸', '', '--ar-exam', '100% auto', 'repeat-y'],
     ];
     const PAPER_ORDER = [8, 6, 7, 9, 0, 1, 2, 3, 4];
     const UPLOAD = 5;
@@ -836,80 +836,6 @@
     // 你的每一条 = 一张答题卡（上面印着前一张试卷的三道题，正文是你的作答，框在答题区域里）。题号按角色的条数往下排
     // 背面透过来的字：刊物和答卷的纸不是完全不透的，背面那一页印的字会淡淡地反着透过来（她说真的书纸、模考卷都这样）。
     // 刊物透的是下一页（下一条消息，没有就是上一条）的正文；答卷透的是背面的题。左右反、糊一点、很淡，不能选中
-    // ── 背面透过来的字（v52 改回每张纸实时的：v50 画进纸图里，她说字太少、不够真）──
-    // 刊物透的是下一页（后面几条消息）的正文，答卷透的是背面的题；有页边距（上面让开卷头那一行，左右和正文一样），
-    // 最底下透的是背面那一页的页码（和正面页脚同一行），不是正文。字数按这张纸的高度估，够铺满整张。
-    // 轻量：只在 refresh 里算、算过记 key；模糊用 text-shadow（不用 filter，不给每张纸单独开一层）
-    const EXAM_BACK = [
-        '二、古代诗文阅读（35 分）', '（一）文言文阅读（本题共 5 小题，20 分）', '阅读下面的文言文，完成 10～14 题。',
-        '　　君讳某，字子和，少孤，事母以孝闻。家贫，借书于邻，昼诵夜思，未尝废卷。年十九，举于乡，不就，曰：「吾母老矣，安能远游。」乡人贤之。母殁，乃仕，所至有惠政，去之日，民遮道泣送。性简淡，不治生产，俸入多以周亲旧，殁之日，囊无余财。',
-        '10. 下列对文中画波浪线部分的断句，正确的一项是（3 分）', '11. 下列对文中加点的词语及相关内容的解说，不正确的一项是（3 分）',
-        '12. 下列对原文有关内容的概述，不正确的一项是（3 分）', '13. 把文中画横线的句子翻译成现代汉语。（8 分）', '14. 文中君「不就」的原因是什么？请简要概括。（3 分）',
-        '（二）古代诗歌阅读（本题共 2 小题，9 分）', '15. 下列对这首诗的理解和赏析，不正确的一项是（3 分）', '16. 诗中的景物描写表达了诗人怎样的情感？请简要分析。（6 分）',
-        '三、语言文字运用（20 分）', '阅读下面的文字，完成 18～20 题。', '18. 文中画横线的句子有语病，请进行修改，使语言表达准确流畅。（4 分）',
-        '19. 请在文中横线处补写恰当的语句，使整段文字语意完整连贯。（6 分）', '四、写作（60 分）', '22. 阅读下面的材料，根据要求写作。（60 分）',
-        '　　要求：选准角度，确定立意，明确文体，自拟标题；不要套作，不得抄袭；不得泄露个人信息；不少于 800 字。',
-    ];
-    const backPlain = new Map();
-    const plainOf = (m) => {
-        const raw = String(m?.mes ?? '');
-        let t = backPlain.get(raw);
-        if (t === undefined) {
-            t = raw.replace(/```[\s\S]*?```/g, '').replace(/<[^>]+>/g, '').replace(/[*_#>`~]/g, '').replace(/\n{2,}/g, '\n').trim();
-            if (backPlain.size > 400) backPlain.clear();
-            backPlain.set(raw, t);
-        }
-        return t;
-    };
-    function backs() {
-        const lay = (LAYOUTS[store()?.lay ?? 0] ?? LAYOUTS[0])[1];
-        const on = body.classList.contains('ar-tab') && (lay === 'ar-lay-b' || lay === 'ar-lay-d');
-        const els = [...doc.querySelectorAll('#chat > .mes[mesid]')];
-        if (!on) { for (const el of els) el.querySelector(':scope > .ar-back')?.remove(); return; }
-        const c = ctx();
-        const chat = Array.isArray(c?.chat) ? c.chat : [];
-        // 先一口气量完高度，再一起写（边量边写会让浏览器反复排版）
-        const hs = els.map((el) => el.offsetHeight);
-        // 答卷：透字从卷头（考试名称、注意事项 / 答题卡抬头）下面才开始——抬头上叠着反字她说不对
-        const tops = els.map((el) => {
-            const hd = lay === 'ar-lay-d' ? el.querySelector(':scope > .ar-scratch .hd') : null;
-            return hd ? Math.round(hd.getBoundingClientRect().bottom - el.getBoundingClientRect().top + 8) : 0;
-        });
-        const w = els[0]?.offsetWidth || 360;
-        els.forEach((el, i) => {
-            const id = Number(el.getAttribute('mesid'));
-            const need = Math.min(9000, Math.ceil(Math.max(300, (hs[i] / 28) * (w / 15) * 1.15) / 400) * 400);
-            let foot;
-            if (lay === 'ar-lay-d') foot = el.style.getPropertyValue('--ar-foot').replace(/^"|"$/g, '').replace(/第 (\d+) 页/, (_, n) => `第 ${Number(n) + 1} 页`);
-            else foot = String(id + 1);
-            const key = `${lay}|${id}|${need}|${chat.length}|${foot}|${tops[i]}`;
-            let b = el.querySelector(':scope > .ar-back');
-            if (b?.dataset.k === key) return;
-            let t = '';
-            if (lay === 'ar-lay-d') {
-                const k = id * 3;
-                const qs = EXAM_Q.map((_, n) => `${(k + n) % 30 + 4}. ${EXAM_Q[(k + n) % EXAM_Q.length]}`);
-                for (let n = 0; t.length < need; n++) t += (n % 2 ? qs : EXAM_BACK).join('\n') + '\n';
-            } else {
-                let src = '';
-                for (let n = id + 1; n < chat.length && src.length < need; n++) src += plainOf(chat[n]) + '\n';
-                for (let n = id - 1; n >= 0 && src.length < need; n--) src += plainOf(chat[n]) + '\n';
-                if (!src.trim()) src = plainOf(chat[id]) + '\n';
-                while (src.trim() && t.length < need) t += src;
-            }
-            if (!b) {
-                b = doc.createElement('div');
-                b.className = 'ar-back';
-                b.setAttribute('aria-hidden', 'true');
-                b.innerHTML = '<p></p><i></i>';
-                el.prepend(b);
-            }
-            b.dataset.k = key;
-            if (tops[i]) b.style.top = `${tops[i]}px`; else b.style.removeProperty('top');
-            b.firstChild.textContent = t.slice(0, need);
-            b.lastChild.textContent = foot;
-        });
-    }
     function scratch() {
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
         const c = ctx();
@@ -1257,7 +1183,6 @@
         if (pp[2] === 'upload' && s.paperTex && !s.texFree?.[s.paperTex]) root.setProperty('--ar-base', '#fff'); else root.removeProperty('--ar-base');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
         else if (pp[2].startsWith('--')) root.setProperty('--ar-cotton', `var(${pp[2]})`);
-        else if (pp[2].startsWith('tint:')) root.setProperty('--ar-cotton', `linear-gradient(${pp[2].slice(5)}, ${pp[2].slice(5)})`);
         else if (pp[2] === 'upload' && s.paperTex) {
             // 自己上传的纸纹：宽度对齐每张纸（只会缩小、不会放大，所以不糊）；
             // 纸比图长的部分，接这张图上下翻过来的样子，接缝是对称的，看不出断开
@@ -1285,6 +1210,8 @@
         }
         // 有的纸纹要铺得比棉纸细（布纹的织纹）
         if (pp[3]) root.setProperty('--ar-cs', pp[3]);
+        // 整页的图：只上下重复，每张纸都从图的最上面开始（不用每张纸错开的那个偏移，横着错开会露白）
+        if (pp[4]) { root.setProperty('--ar-cr', pp[4]); root.setProperty('--ar-pp', '0 0'); }
         wall();
         refresh(0);
     }
@@ -1456,7 +1383,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.27</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.28</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
