@@ -260,7 +260,7 @@
         if (on) {
             const first = !body.classList.contains('ar-tab');
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            if (doc.documentElement.dataset.arPv !== '26') doc.documentElement.dataset.arPv = '26';
+            if (doc.documentElement.dataset.arPv !== '27') doc.documentElement.dataset.arPv = '27';
             mount();
             // 已经有就别再 add：classList.add 即使没变也算改了一次 class，挂在 body 上的监听（酒馆和别的扩展的）每次都被叫醒，
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
@@ -603,6 +603,8 @@
         if (s.texts?.exam === '语文周测') delete s.texts.exam;
         // 0.24：0.21 换了每种版式的默认纸，但以前点过的选择还留着（她看到棉纸还是默认）。旧默认清一次，之后再选的照记
         if (!s.pm) { if (s.papers?.[0] === 0) delete s.papers[0]; if (s.papers?.[3] === 4) delete s.papers[3]; s.pm = 1; }
+        // 0.27：「随纸色」从一个总开关改成每张上传的纸一把小锁
+        if (s.texTint) { if (s.paperTex) { s.texFree ??= {}; s.texFree[s.paperTex] = 1; } delete s.texTint; }
         // 0.19.1：「纸纹固定在屏幕上」去掉了
         delete s.texFix;
         // 0.20：底图一律是酒馆的壁纸、封面一律有；台面颜色和桌面图去掉
@@ -1251,8 +1253,8 @@
         const pp = PAPERS[paperOf(s)] ?? PAPERS[0];
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         // 上传的纸用原图的颜色：不叠配色里的「纸」色（她问换了配色后怎么看回原图——上传的图就是纸本身）
-        // texTint：她要两种都能选——保持原图的颜色，或者跟着配色的「纸」色一起变
-        if (pp[2] === 'upload' && s.paperTex && !s.texTint) root.setProperty('--ar-base', '#fff'); else root.removeProperty('--ar-base');
+        // 每张上传的纸一把小锁（她的主意）：锁着 = 保持原图的颜色；打开（texFree 里记着）= 跟着配色的「纸」色一起变
+        if (pp[2] === 'upload' && s.paperTex && !s.texFree?.[s.paperTex]) root.setProperty('--ar-base', '#fff'); else root.removeProperty('--ar-base');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
         else if (pp[2].startsWith('--')) root.setProperty('--ar-cotton', `var(${pp[2]})`);
         else if (pp[2].startsWith('tint:')) root.setProperty('--ar-cotton', `linear-gradient(${pp[2].slice(5)}, ${pp[2].slice(5)})`);
@@ -1454,7 +1456,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.26</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.27</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
@@ -1462,7 +1464,6 @@
             <section><h4>纸纹</h4>
                 <div class="ar-papers"></div>
                 <label class="ar-row ar-texk"><span>浓淡</span><input type="range" min="5" max="100" step="5" data-texk></label>
-                <div class="ar-row ar-texk ar-tint"><span>颜色</span><button data-tint="0">原色</button><button data-tint="1">随纸色</button></div>
             </section>
             <section><h4>版式</h4>
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}">${n}</button>`).join('')}</div>
@@ -1489,7 +1490,7 @@
             const cur = paperOf(st);
             p.querySelector('.ar-papers').innerHTML =
                 PAPER_ORDER.map((i) => `<button data-paper="${i}" class="${cur === i ? 'on' : ''}${PAPER_DEF[st?.lay ?? 0] === i ? ' def' : ''}"><i class="p${i}"></i><em>${PAPERS[i][0]}</em></button>`).join('') +
-                (st?.texLib ?? []).map((u, i) => `<button data-lib="${i}" class="${cur === UPLOAD && st?.paperTex === u ? 'on' : ''}"><i style="background-image:url('${esc(u)}')"></i><i class="ar-del" role="button" data-libdel="${i}" title="删除">×</i><em></em></button>`).join('') +
+                (st?.texLib ?? []).map((u, i) => `<button data-lib="${i}" class="${cur === UPLOAD && st?.paperTex === u ? 'on' : ''}"><i style="background-image:url('${esc(u)}')"></i><i class="ar-lock fa-solid ${st?.texFree?.[u] ? 'fa-lock-open' : 'fa-lock'}" role="button" data-liblock="${i}" title="${st?.texFree?.[u] ? '随纸色' : '原色'}"></i><i class="ar-del" role="button" data-libdel="${i}" title="删除">×</i><em></em></button>`).join('') +
                 '<label class="ar-add"><i></i><em>上传</em><input type="file" accept="image/*" data-paperup hidden></label>';
         };
         const sync = () => {
@@ -1506,7 +1507,6 @@
                 u.placeholder = up ? (uf.file ?? '已上传') : '字体链接';
             }
             for (const b of p.querySelectorAll('[data-lay]')) b.classList.toggle('on', Number(b.dataset.lay) === (store()?.lay ?? 0));
-            for (const b of p.querySelectorAll('[data-tint]')) b.classList.toggle('on', (b.dataset.tint === '1') === !!store()?.texTint);
             const tk = p.querySelector('[data-texk]');
             if (tk) tk.value = String(store()?.texK ?? 100);
             // 浓淡只对上传的纸纹有用：选着上传的那张时才出现
@@ -1585,10 +1585,18 @@
             const b = e.target.closest('button, .ar-x, .ar-del');
             if (!b || !st) return;
             if (b.classList.contains('ar-x')) { stylePanel(false); return; }
+            // 小锁：点一下开 / 锁（不算选这张纸）
+            const lock = e.target.closest('.ar-lock');
+            if (lock) {
+                const u = st.texLib?.[Number(lock.dataset.liblock)];
+                if (u) { st.texFree ??= {}; if (st.texFree[u]) delete st.texFree[u]; else st.texFree[u] = 1; }
+                applyStyle(); save(); sync(); return;
+            }
             if (b.dataset.libdel !== undefined) {
                 const u = st.texLib?.[Number(b.dataset.libdel)];
                 st.texLib?.splice(Number(b.dataset.libdel), 1);
                 if (u && st.paperTex === u) delete st.paperTex;
+                if (u && st.texFree) delete st.texFree[u];
                 if (u && u.startsWith('/user/files/')) fetch('/api/files/delete', { method: 'POST', headers: ctx()?.getRequestHeaders?.(), body: JSON.stringify({ path: u.slice(1) }) }).catch(() => {});
                 applyStyle(); save(); sync(); return;
             }
@@ -1617,8 +1625,6 @@
                 st.papers ??= {};
                 if (Number(b.dataset.paper) === PAPER_DEF[st.lay ?? 0]) delete st.papers[st.lay ?? 0];
                 else st.papers[st.lay ?? 0] = Number(b.dataset.paper);
-            } else if (b.dataset.tint !== undefined) {
-                if (b.dataset.tint === '1') st.texTint = true; else delete st.texTint;
             } else if (b.dataset.all !== undefined) {
                 // 自己存的配色方案留着，别的都回到默认
                 delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.texts; delete st.papers; delete st.texK;
