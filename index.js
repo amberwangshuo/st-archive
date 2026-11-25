@@ -214,12 +214,50 @@
     }
     // 写到 <html> 上的变量：值没变就不写（写一次整页都要重新算样式）
     const setRoot = (k, v) => { const st = doc.documentElement.style; if (st.getPropertyValue(k) !== v) st.setProperty(k, v); };
+    // ── 主屏幕模式的刘海（v51）：从 iPhone 主屏幕图标打开、页面铺到了状态栏底下时，顶栏要让出刘海那一条。
+    //    正常情况下 iPhone 会告诉网页安全区多高（env(safe-area-inset-top)），档案主题按它让位；
+    //    但她说所有美化在主屏幕模式下图标都顶到摄像头那一排、点不到——要么安全区报的是 0，要么别的美化根本没让。
+    //    所以插件自己看：主屏幕模式、竖屏、页面高度等于整块屏幕（铺到了状态栏底下）时，取安全区；安全区报 0 就按机型估一个
+    //    （灵动岛 59、刘海 47、其他 20），写进 --ar-sat。档案主题的样式都用它；别的美化开着时，插件另外加一小段样式把酒馆的顶栏往下挪。
+    //    只在打开、转屏、换主题时量一次（量的时候要读计算样式）。
+    let safeOn = null;
+    function safeTop() {
+        const root = doc.documentElement;
+        const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+        const portrait = innerHeight >= innerWidth;
+        const screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+        const covers = standalone && portrait && Math.abs(screenH - innerHeight) < 24;
+        let pad = 0;
+        if (covers) {
+            const probe = doc.createElement('i');
+            probe.style.cssText = 'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top,0px)';
+            root.append(probe);
+            const sat = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+            probe.remove();
+            pad = sat > 0 ? sat : (screenH >= 852 ? 59 : screenH >= 812 ? 47 : 20);
+        }
+        if (pad) setRoot('--ar-sat', `${pad}px`); else root.style.removeProperty('--ar-sat');
+        // 别的美化：把酒馆的顶栏整体往下挪（酒馆所有「顶栏多高」都用 --topBarBlockSize）
+        let fix = doc.getElementById('ar-safe-fix');
+        const need = pad > 0 && !themeOn();
+        if (need && !fix) {
+            fix = doc.createElement('style');
+            fix.id = 'ar-safe-fix';
+            doc.head.append(fix);
+        }
+        if (need) fix.textContent = `:root{--topBarBlockSize:calc(var(--topBarIconSize) + var(--topBarBlockPadding) + ${pad}px) !important}#top-settings-holder{box-sizing:border-box;padding-top:${pad}px !important}#top-bar{height:var(--topBarBlockSize) !important}`;
+        else fix?.remove();
+    }
+    addEventListener('resize', () => safeTop());
+    addEventListener('orientationchange', () => setTimeout(safeTop, 300));
     // 主题可能随时被换掉，过一会儿看一次；这里只放便宜的检查
     function sync() {
-        if (themeOn()) {
+        const on = themeOn();
+        if (on !== safeOn) { safeOn = on; safeTop(); }
+        if (on) {
             const first = !body.classList.contains('ar-tab');
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            if (doc.documentElement.dataset.arPv !== '22') doc.documentElement.dataset.arPv = '22';
+            if (doc.documentElement.dataset.arPv !== '23') doc.documentElement.dataset.arPv = '23';
             mount();
             // 已经有就别再 add：classList.add 即使没变也算改了一次 class，挂在 body 上的监听（酒馆和别的扩展的）每次都被叫醒，
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
@@ -353,7 +391,7 @@
         doc.documentElement.append(probe);
         const sat = parseFloat(getComputedStyle(probe).paddingTop) || 0;
         probe.remove();
-        if (navigator.standalone === true && sat > 0) {
+        if (navigator.standalone === true && (sat > 0 || root.style.getPropertyValue('--ar-sat'))) {
             const portrait = matchMedia('(orientation: portrait)').matches;
             const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
             root.style.setProperty('--ar-vh', `${full}px`);
@@ -1302,7 +1340,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.22</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.23</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
