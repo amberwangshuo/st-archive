@@ -259,7 +259,7 @@
         if (on) {
             const first = !body.classList.contains('ar-tab');
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            if (doc.documentElement.dataset.arPv !== '24') doc.documentElement.dataset.arPv = '24';
+            if (doc.documentElement.dataset.arPv !== '25') doc.documentElement.dataset.arPv = '25';
             mount();
             // 已经有就别再 add：classList.add 即使没变也算改了一次 class，挂在 body 上的监听（酒馆和别的扩展的）每次都被叫醒，
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
@@ -498,12 +498,15 @@
         ['IBM Plex Mono', '"IBM Plex Mono", "KingHwaOldSong", "Courier New", monospace', 'https://fonts.loli.net/css2?family=IBM+Plex+Mono:wght@300;400&display=swap'],
     ];
     // 纸纹：名字、叠在纸上的一层图案（--ar-pat）、换掉棉纸纹理（--ar-cotton；'none' 是不要纹理）
-    const GRID = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M0 .3H16M.3 0V16' stroke='%231D1D1C' stroke-opacity='.09' stroke-width='.6' fill='none'/%3E%3C/svg%3E\") 0 0 / 16px 16px";
+    // 线的颜色跟着配色里的「字」走（v53：以前写死成深灰，纸调成深色后线就看不见了）
+    const LINE = (p) => `color-mix(in srgb, var(--ar-ink) ${p}%, transparent)`;
+    // 方格只能用一层画（--ar-pat 是消息纸背景里的一层，多一层后面几层的叠法就错位）：锥形渐变，每格左、上各一道线
+    const GRID = `conic-gradient(from 90deg at .7px .7px, transparent 90deg, ${LINE(11)} 0) 0 0 / 16px 16px`;
     const PAPERS = [
         ['棉纸', '', ''],
-        ['点阵', 'radial-gradient(circle, rgba(29, 29, 28, .2) .85px, transparent 1.25px) 0 0 / 14px 14px', ''],
+        ['点阵', `radial-gradient(circle, ${LINE(22)} .85px, transparent 1.25px) 0 0 / 14px 14px`, ''],
         ['方格', GRID, ''],
-        ['横线', 'repeating-linear-gradient(transparent 0 27px, rgba(29, 29, 28, .08) 27px 27.6px)', ''],
+        ['横线', `repeating-linear-gradient(transparent 0 27px, ${LINE(10)} 27px 27.6px)`, ''],
         ['素白', '', 'none'],
         ['自己上传', '', 'upload'],
         // 后加的排在最后（存的是序号，前面的不能动）；style 卡里按 PAPER_ORDER 排
@@ -1420,7 +1423,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.24</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.25</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
@@ -1453,7 +1456,7 @@
             const st = store();
             const cur = paperOf(st);
             p.querySelector('.ar-papers').innerHTML =
-                PAPER_ORDER.map((i) => `<button data-paper="${i}" class="${cur === i ? 'on' : ''}"><i class="p${i}"></i><em>${PAPERS[i][0]}</em></button>`).join('') +
+                PAPER_ORDER.map((i) => `<button data-paper="${i}" class="${cur === i ? 'on' : ''}${PAPER_DEF[st?.lay ?? 0] === i ? ' def' : ''}"><i class="p${i}"></i><em>${PAPERS[i][0]}</em></button>`).join('') +
                 (st?.texLib ?? []).map((u, i) => `<button data-lib="${i}" class="${cur === UPLOAD && st?.paperTex === u ? 'on' : ''}"><i style="background-image:url('${esc(u)}')"></i><i class="ar-del" role="button" data-libdel="${i}" title="删除">×</i><em></em></button>`).join('') +
                 '<label class="ar-add"><i></i><em>上传</em><input type="file" accept="image/*" data-paperup hidden></label>';
         };
@@ -1577,8 +1580,10 @@
             } else if (b.dataset.lay !== undefined) {
                 st.lay = Number(b.dataset.lay);
             } else if (b.dataset.paper !== undefined) {
+                // 点的是这个版式的默认纸（名字下面有一道线的那格）：不记成「自己选的」，就是回到默认
                 st.papers ??= {};
-                st.papers[st.lay ?? 0] = Number(b.dataset.paper);
+                if (Number(b.dataset.paper) === PAPER_DEF[st.lay ?? 0]) delete st.papers[st.lay ?? 0];
+                else st.papers[st.lay ?? 0] = Number(b.dataset.paper);
             } else if (b.dataset.all !== undefined) {
                 // 自己存的配色方案留着，别的都回到默认
                 delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.texts; delete st.papers; delete st.texK;
