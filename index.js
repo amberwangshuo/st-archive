@@ -7,6 +7,8 @@
 // 没装这个插件时，主题照样能用：图标一直显示，只有一枚签，输入栏点中间也能抽出来。
 
 (() => {
+    if (globalThis.__stArchiveLoaded) return;
+    globalThis.__stArchiveLoaded = true;
     const doc = document;
     const body = doc.body;
     let tabs = null;
@@ -36,7 +38,7 @@
 
     // 欢迎页（v23 起没有封面了，她说看不出用处）：只记一下是不是在欢迎页
     const home = () => !!doc.querySelector('#chat .welcomePanel');
-    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
     // 侧面的签：样张卡，和三个最常开的抽屉
     const drawer = (id) => () => doc.querySelector(`#${id} > .drawer-toggle`)?.click();
@@ -220,12 +222,13 @@
         if (themeColor0 !== null) doc.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor0);
         topKey = '';
         wallKey = null;
-        doc.getElementById('ar-fonts-cn')?.remove();
-        doc.getElementById('ar-fonts')?.remove();
+        doc.getElementById('ar-edit')?.remove();
+        for (const l of doc.querySelectorAll('link[id^="ar-font"]')) l.remove();
+        for (const k of Object.keys(fontKeys)) delete fontKeys[k];
         doc.getElementById('ar-style')?.remove();
         clearStyle();
         tabs = null;
-        body.classList.remove('ar-tab', 'ar-open', 'ar-memo', 'ar-home', 'ar-styling');
+        body.classList.remove('ar-tab', 'ar-open', 'ar-memo', 'ar-home', 'ar-styling', 'ar-tb1', 'ar-tb2', 'ar-drawer');
         doc.documentElement.style.removeProperty('--ar-wall');
     }
 
@@ -434,7 +437,8 @@
         const root = doc.documentElement;
         // 壁纸地址从 --ar-wall 里取（wall() 写的，就是 #bg1 的图），不读计算样式
         const m = (root.style.getPropertyValue('--ar-wall') || '').match(/url\(["']?(.*?)["']?\)/);
-        const key = `${m?.[1]?.slice(0, 200) ?? ''}|${m?.[1]?.length ?? 0}|${innerWidth}x${innerHeight}`;
+        const orient = innerWidth > innerHeight ? 'L' : 'P';
+        const key = `${m?.[1]?.slice(0, 200) ?? ''}|${m?.[1]?.length ?? 0}|${innerWidth}:${orient}`;
         if (key === topKey) return;
         topKey = key;
         const meta = doc.querySelector('meta[name="theme-color"]');
@@ -667,11 +671,16 @@
         s.papers[layout] = UPLOAD;
     }
     const save = () => ctx()?.saveSettingsDebounced?.();
-    const text = (k) => store()?.texts?.[k] ?? TEXTS.find((t) => t[0] === k)[2];
+    const text = (k) => store()?.texts?.[k] ?? (TEXTS.find((t) => t[0] === k)?.[2] ?? '');
 
     function loadCss(href, id) {
-        if (!href || doc.getElementById(id)) return;
-        const l = doc.createElement('link');
+        if (!href) return;
+        let l = doc.getElementById(id);
+        if (l) {
+            if (l.getAttribute('href') !== href) l.href = href;
+            return;
+        }
+        l = doc.createElement('link');
         l.rel = 'stylesheet';
         l.href = href;
         l.id = id;
@@ -988,46 +997,74 @@
             <div class="ph"><div class="pin"><div class="pf"><i></i><span class="lb">${date}</span></div><div class="pb"><span>${date}</span></div></div></div>
         </div>`;
         const t0 = Date.now();
+        let played = false;
         const inHand = () => el.querySelector('.ph.zoom, .bk.pull') || doc.getElementById('ar-edit');
-        const open = () => {
+        const reparentToRoot = () => {
+            if (el.isConnected && el.parentElement !== doc.documentElement) {
+                doc.documentElement.append(el);
+            }
+        };
+        const openCover = () => {
             if (el.classList.contains('open')) return;
+            reparentToRoot();
             el.classList.add('open');
             setTimeout(() => el.remove(), 900);
         };
         const tryOpen = () => {
             if (!el.isConnected || !appReady || inHand()) return;
-            // 封面至少停一下，不然刚出来就打开，像闪了一下
-            const wait = 1400 - (Date.now() - t0);
+            const minStay = played ? 1100 : 1800;
+            const wait = minStay - (Date.now() - t0);
             if (wait > 0) { setTimeout(tryOpen, wait); return; }
-            open();
+            openCover();
         };
         el.addEventListener('click', (e) => {
             const ph = e.target.closest('.ph');
             const bk = e.target.closest('.bk');
             if (ph) {
-                // 拿起来 → 翻到背面 → 放回去
+                played = true;
                 if (!ph.classList.contains('zoom')) ph.classList.add('zoom');
                 else if (!ph.classList.contains('flip')) ph.classList.add('flip');
                 else ph.classList.remove('zoom', 'flip');
             } else if (bk) {
+                played = true;
                 const was = bk.classList.contains('pull');
                 for (const x of el.querySelectorAll('.bk.pull')) x.classList.remove('pull');
                 if (!was) bk.classList.add('pull');
             } else if (inHand()) {
-                // 点桌面：手里的放回去
                 for (const x of el.querySelectorAll('.ph.zoom')) x.classList.remove('zoom', 'flip');
                 for (const x of el.querySelectorAll('.bk.pull')) x.classList.remove('pull');
-            } else if (appReady) open();
-            setTimeout(tryOpen, 650);
+                if (appReady) setTimeout(tryOpen, 1100);
+                return;
+            } else if (appReady) {
+                openCover();
+                return;
+            }
+            if (!inHand() && appReady) setTimeout(tryOpen, 1100);
         });
-        // 挂在 <html> 下面而不是 body 里：酒馆的 body 自己没有高度还会裁掉超出的部分，放在里面的满屏元素整个看不见
-        doc.documentElement.append(el);
+        // 加载期间酒馆的 <dialog class="popup"> 处于 showModal() 顶层：挂在 <dialog> 外面的元素会被浏览器标为 inert 无法点击。
+        // 因此加载框还在时直接挂进 <dialog> 里，等待期间即可实时点拍立得、翻背面、抽相片；加载框关闭前平滑移回 <html>。
+        const splashDlg = doc.querySelector('dialog.popup[open]:has(#loader.splash-screen)');
+        if (splashDlg) {
+            splashDlg.append(el);
+            const dlgObs = new MutationObserver(() => {
+                if (!splashDlg.open || !splashDlg.isConnected) {
+                    dlgObs.disconnect();
+                    reparentToRoot();
+                }
+            });
+            dlgObs.observe(splashDlg, { attributes: true, attributeFilter: ['open'] });
+        } else {
+            doc.documentElement.append(el);
+        }
+        cover.reparent = reparentToRoot;
         cover.tryOpen = tryOpen;
+        requestAnimationFrame(() => el.classList.add('ready'));
         tryOpen();
     }
     function markReady() {
         if (appReady) return;
         appReady = true;
+        cover.reparent?.();
         cover.tryOpen?.();
     }
 
@@ -1213,10 +1250,11 @@
         // 上传字体（下拉框最后一项）：上传的文件或贴的链接
         const userFont = (slot, fallback) => {
             const uf = s.uf?.[slot];
-            if (!uf?.src) return null;
+            if (!uf?.src || !/^(https?:\/\/|\/)/i.test(uf.src)) return null;
             const fam = `ArUser-${slot}`;
             const isFile = /\.(ttf|otf|woff2?)(\?|#|$)/i.test(uf.src) || uf.src.startsWith('/user/files/');
             if (isFile) {
+                doc.getElementById(`ar-font-u-${slot}`)?.remove();
                 const key = `${slot}|${uf.src}`;
                 if (fontKeys[slot] !== key) {
                     fontKeys[slot] = key;
@@ -1227,7 +1265,7 @@
                 }
                 return `"${fam}", ${fallback}`;
             }
-            loadCss(uf.src, `ar-font-u-${slot}-${uf.src.length}`);
+            loadCss(uf.src, `ar-font-u-${slot}`);
             return uf.name ? `"${uf.name}", ${fallback}` : null;
         };
         const cnU = s.cn === CN_FONTS.length ? userFont('cn', CN_FONTS[0][1]) : null;
@@ -1239,9 +1277,11 @@
         // 版式、底图用不用酒馆自己的背景、信头的地址行
         for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, (LAYOUTS[s.lay ?? 0] ?? LAYOUTS[0])[1] === cls);
         root.setProperty('--ar-idle', q(text('idle')));
-        // 纸纹
+        // 纸纹（同时在 <html> 上标明语义纸型 data-ar-paper，避免主题依赖脆弱的 style*= 字符串匹配）
         const texture = textureOf(s);
         const pp = PAPERS[paperOf(s)] ?? PAPERS[0];
+        const pTag = { '': 'cotton', 'none': 'plain', 'upload': 'upload', '--ar-book': 'book', '--ar-linen': 'linen', '--ar-matte': 'matte', '--ar-exam': 'exam' }[pp[2]] ?? 'cotton';
+        if (doc.documentElement.dataset.arPaper !== pTag) doc.documentElement.dataset.arPaper = pTag;
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         // 上传的纸用原图的颜色：不叠配色里的「纸」色（她问换了配色后怎么看回原图——上传的图就是纸本身）
         // 每张上传的纸一把小锁（她的主意）：锁着 = 保持原图的颜色；打开（texFree 里记着）= 跟着配色的「纸」色一起变
@@ -1286,6 +1326,7 @@
         for (const [v] of VARS) root.removeProperty(v);
         for (const [v] of IMAGES) root.removeProperty(v);
         for (const v of ['--ar-cn', '--ar-tw', '--ar-idle', '--ar-epi', '--ar-vh', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-pp', '--ar-cr', '--ar-wall', '--ar-base']) root.removeProperty(v);
+        delete doc.documentElement.dataset.arPaper;
         for (const [, cls] of LAYOUTS) if (cls) body.classList.remove(cls);
         undress();
     }
@@ -1569,8 +1610,9 @@
                 const url = (await putFile(`archive-paper-${stamp()}.jpg`, data.split(',')[1])) ?? data;
                 chooseTexture(st, layout, url);
                 const all = [...(st.texLib ?? []).filter((x) => x !== url), url];
-                const assigned = new Set(Object.values(st.layoutTextures).map((t) => t.src));
-                const spare = all.filter((u) => !assigned.has(u)).slice(-(12 - assigned.size));
+                const assigned = new Set(Object.values(st.layoutTextures ?? {}).map((t) => t?.src).filter(Boolean));
+                const keepN = Math.max(0, 12 - assigned.size);
+                const spare = keepN ? all.filter((u) => !assigned.has(u)).slice(-keepN) : [];
                 st.texLib = all.filter((u) => assigned.has(u) || spare.includes(u));
                 e.target.value = '';
                 applyStyle();
@@ -1666,6 +1708,7 @@
         for (const k of ['CHAT_CHANGED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_DELETED', 'CHARACTER_EDITED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_UPDATED', 'CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MORE_MESSAGES_LOADED']) {
             if (et[k]) es.on(et[k], () => { sync(); fill(); refresh(); });
         }
+        if (et.APP_INITIALIZED) es.on(et.APP_INITIALIZED, () => cover.reparent?.());
         if (et.APP_READY) es.on(et.APP_READY, markReady);
         // 生成结束、换版式之类之后补一次
         for (const k of ['GENERATION_ENDED', 'GENERATION_STOPPED', 'SETTINGS_UPDATED']) if (et[k]) es.on(et[k], () => refresh(120));
@@ -1676,13 +1719,18 @@
     }
 
     sync();
-    // 刚打开酒馆时主题样式可能晚一点点才到：前十秒每 150ms 看一次，封面能多早出来就多早出来
+    // 监听 #custom-style：酒馆一写入主题 CSS 当帧就挂载封面（0ms 延迟，避免先闪一下光秃秃的加载框）
     {
+        const cs = doc.getElementById('custom-style');
+        if (cs) {
+            const csObs = new MutationObserver(() => { if (themeOn()) sync(); });
+            csObs.observe(cs, { childList: true, characterData: true, subtree: true });
+        }
         let n = 0;
         const early = setInterval(() => {
-            if (doc.getElementById('ar-cover') || coverDone || ++n > 66) { clearInterval(early); return; }
+            if (doc.getElementById('ar-cover') || coverDone || ++n > 100) { clearInterval(early); return; }
             if (themeOn()) sync();
-        }, 150);
+        }, 80);
     }
     setInterval(sync, 1500);
     {
