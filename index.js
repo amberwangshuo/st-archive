@@ -185,6 +185,7 @@
         delete doc.documentElement.dataset.arPv;
         doc.documentElement.style.removeProperty('--ar-vh');
         doc.documentElement.style.removeProperty('--ar-top');
+        doc.documentElement.style.removeProperty('--ar-topink');
         if (themeColor0 !== null) doc.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor0);
         topKey = '';
         doc.getElementById('ar-fonts-cn')?.remove();
@@ -339,12 +340,19 @@
                 for (let i = 0; i < px.length; i += 4) { r += px[i]; gg += px[i + 1]; b += px[i + 2]; }
                 const n = px.length / 4;
                 const col = `rgb(${Math.round(r / n)}, ${Math.round(gg / n)}, ${Math.round(b / n)})`;
+                // 顶栏图标的颜色跟着壁纸走：取顶上一成高那一条（图标所在的地方）的亮度，暗就用浅色图标，亮就用深色
+                g.drawImage(img, sx, sy, cw, Math.max(1, chh * .1), 0, 0, 16, 4);
+                const p2 = g.getImageData(0, 0, 16, 4).data;
+                let L = 0;
+                for (let i = 0; i < p2.length; i += 4) L += .2126 * p2[i] + .7152 * p2[i + 1] + .0722 * p2[i + 2];
+                L /= p2.length / 4;
                 if (topKey !== key) return;
                 root.style.setProperty('--ar-top', col);
+                root.style.setProperty('--ar-topink', L < 140 ? '#f3f3f1' : '#1d1d1c');
                 meta?.setAttribute('content', col);
-            } catch { root.style.removeProperty('--ar-top'); }
+            } catch { root.style.removeProperty('--ar-top'); root.style.removeProperty('--ar-topink'); }
         };
-        img.onerror = () => root.style.removeProperty('--ar-top');
+        img.onerror = () => { root.style.removeProperty('--ar-top'); root.style.removeProperty('--ar-topink'); };
         img.src = m[1];
     }
 
@@ -1252,7 +1260,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.20</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.20.1</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
