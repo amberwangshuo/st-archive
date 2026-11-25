@@ -180,6 +180,7 @@
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
         for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-fs, .ar-back')) f.remove();
+        frames(true);
         body.classList.remove('ar-immersive');
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
         for (const x of doc.querySelectorAll('#chat > .mes')) { x.style.removeProperty('--ar-foot'); x.style.removeProperty('--ar-kh'); }
@@ -259,7 +260,7 @@
         if (on) {
             const first = !body.classList.contains('ar-tab');
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            if (doc.documentElement.dataset.arPv !== '25') doc.documentElement.dataset.arPv = '25';
+            if (doc.documentElement.dataset.arPv !== '26') doc.documentElement.dataset.arPv = '26';
             mount();
             // 已经有就别再 add：classList.add 即使没变也算改了一次 class，挂在 body 上的监听（酒馆和别的扩展的）每次都被叫醒，
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
@@ -271,6 +272,7 @@
             if (doc.querySelector('#top-settings-holder .drawer-content.openDrawer')) open(true);
             body.classList.toggle('ar-home', home());
             flags();
+            frames();
             gatherTools();
             wall();
             topColor();
@@ -281,6 +283,33 @@
         }
     }
 
+    // 卡片自带的小网页（酒馆助手把正则里的 HTML 放进 iframe）：它们是独立的页面，默认字体是系统黑体，主题的样式进不去。
+    // 把正文字体送进去：只设在 <html> 上当默认值（卡片自己给哪里指定了字体，哪里还是它的），字体文件的样式表也一起带进去。
+    // 每次只看还没处理过的 iframe，很便宜
+    let frameFont = '';
+    function frames(off) {
+        for (const f of doc.querySelectorAll('#chat iframe')) {
+            let d;
+            try { d = f.contentDocument; } catch { continue; }
+            if (!d?.head) continue;
+            const old = d.getElementById('ar-if');
+            if (off) { old?.remove(); for (const l of d.querySelectorAll('link[data-ar-if]')) l.remove(); continue; }
+            if (!frameFont) frameFont = getComputedStyle(doc.documentElement).getPropertyValue('--ar-cn').trim();
+            const css = `html{font-family:${frameFont} !important}`;
+            if (old?.textContent === css) continue;
+            old?.remove();
+            for (const l of d.querySelectorAll('link[data-ar-if]')) l.remove();
+            for (const l of doc.querySelectorAll('link[id^="ar-font"]')) {
+                const n = d.createElement('link');
+                n.rel = 'stylesheet'; n.href = l.href; n.dataset.arIf = '1';
+                d.head.append(n);
+            }
+            const st = d.createElement('style');
+            st.id = 'ar-if';
+            st.textContent = css;
+            d.head.prepend(st);
+        }
+    }
     function flags() {
         const tb = doc.getElementById('extensionTopBar');
         const tbOn = !!tb && !tb.classList.contains('displayNone');
@@ -1186,6 +1215,7 @@
             if (s.images?.[key]) root.setProperty(v, `url("${s.images[key]}")`);
             else root.removeProperty(v);
         }
+        frameFont = '';
         const cn = CN_FONTS[s.cn ?? 0] ?? CN_FONTS[0];
         const tw = TW_FONTS[s.tw ?? 0] ?? TW_FONTS[0];
         // 上传字体（下拉框最后一项）：上传的文件或贴的链接
@@ -1221,7 +1251,8 @@
         const pp = PAPERS[paperOf(s)] ?? PAPERS[0];
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         // 上传的纸用原图的颜色：不叠配色里的「纸」色（她问换了配色后怎么看回原图——上传的图就是纸本身）
-        if (pp[2] === 'upload' && s.paperTex) root.setProperty('--ar-base', '#fff'); else root.removeProperty('--ar-base');
+        // texTint：她要两种都能选——保持原图的颜色，或者跟着配色的「纸」色一起变
+        if (pp[2] === 'upload' && s.paperTex && !s.texTint) root.setProperty('--ar-base', '#fff'); else root.removeProperty('--ar-base');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
         else if (pp[2].startsWith('--')) root.setProperty('--ar-cotton', `var(${pp[2]})`);
         else if (pp[2].startsWith('tint:')) root.setProperty('--ar-cotton', `linear-gradient(${pp[2].slice(5)}, ${pp[2].slice(5)})`);
@@ -1423,7 +1454,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.25</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.26</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
@@ -1431,6 +1462,7 @@
             <section><h4>纸纹</h4>
                 <div class="ar-papers"></div>
                 <label class="ar-row ar-texk"><span>浓淡</span><input type="range" min="5" max="100" step="5" data-texk></label>
+                <div class="ar-row ar-texk ar-tint"><span>颜色</span><button data-tint="0">原色</button><button data-tint="1">随纸色</button></div>
             </section>
             <section><h4>版式</h4>
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}">${n}</button>`).join('')}</div>
@@ -1474,6 +1506,7 @@
                 u.placeholder = up ? (uf.file ?? '已上传') : '字体链接';
             }
             for (const b of p.querySelectorAll('[data-lay]')) b.classList.toggle('on', Number(b.dataset.lay) === (store()?.lay ?? 0));
+            for (const b of p.querySelectorAll('[data-tint]')) b.classList.toggle('on', (b.dataset.tint === '1') === !!store()?.texTint);
             const tk = p.querySelector('[data-texk]');
             if (tk) tk.value = String(store()?.texK ?? 100);
             // 浓淡只对上传的纸纹有用：选着上传的那张时才出现
@@ -1584,6 +1617,8 @@
                 st.papers ??= {};
                 if (Number(b.dataset.paper) === PAPER_DEF[st.lay ?? 0]) delete st.papers[st.lay ?? 0];
                 else st.papers[st.lay ?? 0] = Number(b.dataset.paper);
+            } else if (b.dataset.tint !== undefined) {
+                if (b.dataset.tint === '1') st.texTint = true; else delete st.texTint;
             } else if (b.dataset.all !== undefined) {
                 // 自己存的配色方案留着，别的都回到默认
                 delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.texts; delete st.papers; delete st.texK;
