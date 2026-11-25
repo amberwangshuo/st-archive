@@ -130,6 +130,14 @@
         // 侧签排在垫纸前面（v52）：手机上它和垫纸、消息纸同一层，先出现的在最下面——压在垫纸底下，
         // 消息和消息之间的缝里看到的是垫纸，不是签（她说缝里露出签很违和）；点到时加 .up 浮上来
         sheld.insertBefore(sides, under);
+        for (const control of [...tabs.children, ...sides.children]) {
+            control.tabIndex = 0;
+            control.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                if (!event.repeat) control.click();
+            });
+        }
         fill();
         applyStyle();
     }
@@ -139,7 +147,24 @@
     const KEEP = new Set(['options_button', 'extensionsMenuButton', 'send_but', 'mes_stop']);
     const keep = (el) => KEEP.has(el.id) || el.classList.contains('stscript_btn');
 
+    // A comment preserves the exact slot even when neighbouring tools move too.
+    const toolSlots = new Map();
+    function collectTool(el, destination) {
+        const parent = el.parentElement;
+        if (!parent || parent === destination) return;
+        toolSlots.get(el)?.marker.remove();
+        const marker = doc.createComment('archive-tool');
+        el.before(marker);
+        toolSlots.set(el, { marker, parentId: parent.id });
+        destination.append(el);
+    }
+
     function gatherTools() {
+        for (const [el, slot] of toolSlots) {
+            if (el.isConnected) continue;
+            slot.marker.remove();
+            toolSlots.delete(el);
+        }
         const card = doc.getElementById('nonQRFormItems');
         if (!card) return;
         let tools = doc.getElementById('ar-tools');
@@ -152,23 +177,25 @@
         const tq = tools.querySelector('.ar-tq');
         const ti = tools.querySelector('.ar-ti');
         const qr = doc.getElementById('qr--bar');
-        if (qr && qr.parentElement !== tq) tq.append(qr);
+        if (qr) collectTool(qr, tq);
         for (const id of ['leftSendForm', 'rightSendForm']) {
             for (const el of [...(doc.getElementById(id)?.children ?? [])]) {
-                if (!keep(el)) ti.append(el);
+                if (!keep(el)) collectTool(el, ti);
             }
         }
     }
 
     function releaseTools() {
         const tools = doc.getElementById('ar-tools');
-        if (!tools) return;
-        const form = doc.getElementById('send_form');
-        const right = doc.getElementById('rightSendForm');
-        const qr = doc.getElementById('qr--bar');
-        if (qr && form) form.prepend(qr);
-        for (const el of [...tools.querySelectorAll('.ar-ti > *')]) right?.insertBefore(el, doc.getElementById('send_but'));
-        tools.remove();
+        for (const [el, { marker, parentId }] of toolSlots) {
+            if (tools?.contains(el)) {
+                if (marker.isConnected) marker.replaceWith(el);
+                else (doc.getElementById(parentId) ?? doc.getElementById('send_form'))?.append(el);
+            }
+            marker.remove();
+        }
+        toolSlots.clear();
+        tools?.remove();
     }
 
 
@@ -186,11 +213,13 @@
         for (const x of doc.querySelectorAll('#chat > .mes')) { x.style.removeProperty('--ar-foot'); x.style.removeProperty('--ar-kh'); }
         doc.getElementById('ar-cover')?.remove();
         delete doc.documentElement.dataset.arPv;
+        delete doc.documentElement.dataset.arRev;
         doc.documentElement.style.removeProperty('--ar-vh');
         doc.documentElement.style.removeProperty('--ar-top');
         doc.documentElement.style.removeProperty('--ar-topink');
         if (themeColor0 !== null) doc.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor0);
         topKey = '';
+        wallKey = null;
         doc.getElementById('ar-fonts-cn')?.remove();
         doc.getElementById('ar-fonts')?.remove();
         doc.getElementById('ar-style')?.remove();
@@ -260,6 +289,7 @@
             const first = !body.classList.contains('ar-tab');
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
             if (doc.documentElement.dataset.arPv !== '28') doc.documentElement.dataset.arPv = '28';
+            if (doc.documentElement.dataset.arRev !== '29') doc.documentElement.dataset.arRev = '29';
             mount();
             // 已经有就别再 add：classList.add 即使没变也算改了一次 class，挂在 body 上的监听（酒馆和别的扩展的）每次都被叫醒，
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
@@ -616,8 +646,26 @@
             if (s.paper === 5) { s.papers ??= {}; s.papers[s.lay ?? 0] ??= 5; }
             delete s.paper;
         }
+        if (!s.layoutTextures) {
+            s.layoutTextures = {};
+            if (s.paperTex) {
+                for (const [layout, paper] of Object.entries(s.papers ?? {})) {
+                    if (paper === UPLOAD) s.layoutTextures[layout] = { src: s.paperTex, strength: s.texK ?? 100 };
+                }
+            }
+            delete s.paperTex;
+            delete s.texK;
+        }
         return s;
     };
+    const textureOf = (s) => s?.layoutTextures?.[s.lay ?? 0];
+    function chooseTexture(s, layout, src) {
+        if (!src) return;
+        const old = s.layoutTextures[layout];
+        s.layoutTextures[layout] = { src, strength: old?.src === src ? old.strength : 100 };
+        s.papers ??= {};
+        s.papers[layout] = UPLOAD;
+    }
     const save = () => ctx()?.saveSettingsDebounced?.();
     const text = (k) => store()?.texts?.[k] ?? TEXTS.find((t) => t[0] === k)[2];
 
@@ -752,13 +800,14 @@
                 const keep = [...new Set([0, si - 1, si, si + 1, sw - 1])].filter((i) => i >= 0 && i < sw).sort((a, b) => a - b);
                 keep.forEach((i, k) => { if (k && i - keep[k - 1] > 1) list.push(-1); list.push(i); });
             }
-            let h = '';
+            let h = '<button type="button" class="ar-folio-toggle" aria-label="展开或收起稿件页码" aria-expanded="' +
+                f.classList.contains('show') + '">' + n2(si + 1) + ' / ' + n2(sw) + '</button>';
             for (const i of list) {
                 h += i < 0
                     ? '<button type="button" class="gap" data-jump title="全部稿">…</button>'
                     : `<button type="button" data-i="${i}"${i === si ? ' class="on" aria-current="page"' : ''}>${n2(i + 1)}</button>`;
             }
-            if (more) h += `<button type="button" class="new" data-i="${sw}">${n2(sw + 1)}</button>`;
+            if (more) h += `<button type="button" class="new" data-i="${sw}" aria-label="生成新稿" title="生成新稿">＋</button>`;
             f.innerHTML = h;
         }
     }
@@ -766,15 +815,30 @@
     const folioTimers = new WeakMap();
     const showFolio = (f) => {
         f.classList.add('show');
+        f.querySelector('.ar-folio-toggle')?.setAttribute('aria-expanded', 'true');
         clearTimeout(folioTimers.get(f));
-        folioTimers.set(f, setTimeout(() => f.classList.remove('show'), 8000));
+        folioTimers.set(f, setTimeout(() => {
+            if (f.contains(doc.activeElement) && doc.activeElement.matches(':focus-visible')) return;
+            f.classList.remove('show');
+            f.querySelector('.ar-folio-toggle')?.setAttribute('aria-expanded', 'false');
+        }, 8000));
     };
     doc.addEventListener('click', (e) => {
         const f = e.target.closest?.('.ar-folio');
         if (f && !e.target.closest('.ar-folio button')) { e.preventDefault(); e.stopPropagation(); showFolio(f); return; }
         const b = e.target.closest?.('.ar-folio button');
         if (!b) return;
-        showFolio(b.closest('.ar-folio'));
+        if (b.classList.contains('ar-folio-toggle')) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (f.classList.contains('show')) {
+                clearTimeout(folioTimers.get(f));
+                f.classList.remove('show');
+                b.setAttribute('aria-expanded', 'false');
+            } else showFolio(f);
+            return;
+        }
+        showFolio(f);
         e.preventDefault();
         e.stopPropagation();
         const el = b.closest('.mes');
@@ -1176,18 +1240,19 @@
         for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, (LAYOUTS[s.lay ?? 0] ?? LAYOUTS[0])[1] === cls);
         root.setProperty('--ar-idle', q(text('idle')));
         // 纸纹
+        const texture = textureOf(s);
         const pp = PAPERS[paperOf(s)] ?? PAPERS[0];
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         // 上传的纸用原图的颜色：不叠配色里的「纸」色（她问换了配色后怎么看回原图——上传的图就是纸本身）
         // 每张上传的纸一把小锁（她的主意）：锁着 = 保持原图的颜色；打开（texFree 里记着）= 跟着配色的「纸」色一起变
-        if (pp[2] === 'upload' && s.paperTex && !s.texFree?.[s.paperTex]) root.setProperty('--ar-base', '#fff'); else root.removeProperty('--ar-base');
+        if (pp[2] === 'upload' && texture?.src && !s.texFree?.[texture?.src]) root.setProperty('--ar-base', '#fff'); else root.removeProperty('--ar-base');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
         else if (pp[2].startsWith('--')) root.setProperty('--ar-cotton', `var(${pp[2]})`);
-        else if (pp[2] === 'upload' && s.paperTex) {
+        else if (pp[2] === 'upload' && texture?.src) {
             // 自己上传的纸纹：宽度对齐每张纸（只会缩小、不会放大，所以不糊）；
             // 纸比图长的部分，接这张图上下翻过来的样子，接缝是对称的，看不出断开
-            const src = s.paperTex;
-            const k = Math.min(1, Math.max(.05, (s.texK ?? 100) / 100));
+            const src = texture?.src;
+            const k = Math.min(1, Math.max(.05, (texture?.strength ?? 100) / 100));
             // 图跟着每张纸走：宽度对齐，纸比图长的部分接同一张（做成了上下无缝的竖条，见 paperTile）。
             // （v40–v42 有过「固定在屏幕上、纸从上面滑过」，v43 她说图不动字在动很怪，去掉了）
             if (texSrc !== `${k}|${src}` || !texURL) {
@@ -1199,13 +1264,13 @@
             root.setProperty('--ar-cr', 'repeat-y');
             paperTile(src, k).then((u) => {
                 const now = store() ?? {};
-                if (now.paperTex === src && (now.texK ?? 100) / 100 === (s.texK ?? 100) / 100 && (PAPERS[paperOf(now)] ?? PAPERS[0])[2] === 'upload') {
+                if (themeOn() && textureOf(now)?.src === src && (textureOf(now)?.strength ?? 100) / 100 === k && (PAPERS[paperOf(now)] ?? PAPERS[0])[2] === 'upload') {
                     root.setProperty('--ar-cotton', `url("${u}")`);
                 }
             });
         }
         else root.removeProperty('--ar-cotton');
-        if (pp[2] !== 'upload' || !s.paperTex) {
+        if (pp[2] !== 'upload' || !texture?.src) {
             for (const v of ['--ar-cs', '--ar-pp', '--ar-cr']) root.removeProperty(v);
         }
         // 有的纸纹要铺得比棉纸细（布纹的织纹）
@@ -1231,7 +1296,10 @@
     let texURL = null, texSrc = null, texJob = null;
     function paperTile(src, k = 1) {
         const key = `${k}|${src}`;
-        if (texSrc === key && texURL) return Promise.resolve(texURL);
+        if (texSrc === key && texURL) {
+            texJob = null;
+            return Promise.resolve(texURL);
+        }
         if (texJob?.src === key) return texJob.p;
         const job = { src: key };
         job.p = new Promise((resolve) => {
@@ -1283,7 +1351,7 @@
                 c.filter = 'none';
                 if (k < 1) { c.fillStyle = `rgba(255,255,255,${(1 - k ** 1.5).toFixed(3)})`; c.fillRect(0, 0, w, cv.height); }
                 cv.toBlob((b) => {
-                    if (!b) return resolve(src);
+                    if (!b || texJob !== job) return resolve(src);
                     if (texURL) URL.revokeObjectURL(texURL);
                     texURL = URL.createObjectURL(b);
                     texSrc = key;
@@ -1383,7 +1451,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.28</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.29</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
@@ -1417,7 +1485,7 @@
             const cur = paperOf(st);
             p.querySelector('.ar-papers').innerHTML =
                 PAPER_ORDER.map((i) => `<button data-paper="${i}" class="${cur === i ? 'on' : ''}${PAPER_DEF[st?.lay ?? 0] === i ? ' def' : ''}"><i class="p${i}"></i><em>${PAPERS[i][0]}</em></button>`).join('') +
-                (st?.texLib ?? []).map((u, i) => `<button data-lib="${i}" class="${cur === UPLOAD && st?.paperTex === u ? 'on' : ''}"><i style="background-image:url('${esc(u)}')"></i><i class="ar-lock fa-solid ${st?.texFree?.[u] ? 'fa-lock-open' : 'fa-lock'}" role="button" data-liblock="${i}" title="${st?.texFree?.[u] ? '随纸色' : '原色'}"></i><i class="ar-del" role="button" data-libdel="${i}" title="删除">×</i><em></em></button>`).join('') +
+                (st?.texLib ?? []).map((u, i) => `<button data-lib="${i}" class="${cur === UPLOAD && textureOf(st)?.src === u ? 'on' : ''}"><i style="background-image:url('${esc(u)}')"></i><i class="ar-lock fa-solid ${st?.texFree?.[u] ? 'fa-lock-open' : 'fa-lock'}" role="button" data-liblock="${i}" title="${st?.texFree?.[u] ? '随纸色' : '原色'}"></i><i class="ar-del" role="button" data-libdel="${i}" title="删除">×</i><em></em></button>`).join('') +
                 '<label class="ar-add"><i></i><em>上传</em><input type="file" accept="image/*" data-paperup hidden></label>';
         };
         const sync = () => {
@@ -1435,9 +1503,9 @@
             }
             for (const b of p.querySelectorAll('[data-lay]')) b.classList.toggle('on', Number(b.dataset.lay) === (store()?.lay ?? 0));
             const tk = p.querySelector('[data-texk]');
-            if (tk) tk.value = String(store()?.texK ?? 100);
+            if (tk) tk.value = String(textureOf(store())?.strength ?? 100);
             // 浓淡只对上传的纸纹有用：选着上传的那张时才出现
-            for (const row of p.querySelectorAll('.ar-texk')) row.hidden = !(store()?.paperTex && paperOf(store()) === UPLOAD);
+            for (const row of p.querySelectorAll('.ar-texk')) row.hidden = !(textureOf(store())?.src && paperOf(store()) === UPLOAD);
         };
         let texTimer = 0;
         p.addEventListener('input', (e) => {
@@ -1446,7 +1514,9 @@
             const v = e.target.dataset?.v;
             if (e.target.dataset?.texk !== undefined) {
                 // 拖动时每次都重做一整张图太慢：停下来 120ms 再算
-                st.texK = Number(e.target.value);
+                const selected = textureOf(st);
+                if (!selected) return;
+                selected.strength = Number(e.target.value);
                 clearTimeout(texTimer);
                 texTimer = setTimeout(() => { applyStyle(); save(); }, 120);
                 return;
@@ -1494,13 +1564,14 @@
             }
             if (e.target.dataset?.paperup !== undefined && e.target.files?.[0]) {
                 // 上传的纸纹：缩到最长边 2400，存到酒馆服务器上（存不了就存在设置里），放进纸纹格子里，并直接换成它
+                const layout = st.lay ?? 0;
                 const data = await shrink(e.target.files[0], 2400, 0.9);
                 const url = (await putFile(`archive-paper-${stamp()}.jpg`, data.split(',')[1])) ?? data;
-                st.texLib = [...(st.texLib ?? []).filter((x) => x !== url), url].slice(-12);
-                st.paperTex = url;
-                delete st.texK;
-                st.papers ??= {};
-                st.papers[st.lay ?? 0] = UPLOAD;
+                chooseTexture(st, layout, url);
+                const all = [...(st.texLib ?? []).filter((x) => x !== url), url];
+                const assigned = new Set(Object.values(st.layoutTextures).map((t) => t.src));
+                const spare = all.filter((u) => !assigned.has(u)).slice(-(12 - assigned.size));
+                st.texLib = all.filter((u) => assigned.has(u) || spare.includes(u));
                 e.target.value = '';
                 applyStyle();
                 save();
@@ -1522,16 +1593,17 @@
             if (b.dataset.libdel !== undefined) {
                 const u = st.texLib?.[Number(b.dataset.libdel)];
                 st.texLib?.splice(Number(b.dataset.libdel), 1);
-                if (u && st.paperTex === u) delete st.paperTex;
+                for (const [layout, texture] of Object.entries(st.layoutTextures)) {
+                    if (texture.src !== u) continue;
+                    delete st.layoutTextures[layout];
+                    if (st.papers?.[layout] === UPLOAD) delete st.papers[layout];
+                }
                 if (u && st.texFree) delete st.texFree[u];
                 if (u && u.startsWith('/user/files/')) fetch('/api/files/delete', { method: 'POST', headers: ctx()?.getRequestHeaders?.(), body: JSON.stringify({ path: u.slice(1) }) }).catch(() => {});
                 applyStyle(); save(); sync(); return;
             }
             if (b.dataset.lib !== undefined) {
-                st.paperTex = st.texLib?.[Number(b.dataset.lib)];
-                delete st.texK;
-                st.papers ??= {};
-                st.papers[st.lay ?? 0] = UPLOAD;
+                chooseTexture(st, st.lay ?? 0, st.texLib?.[Number(b.dataset.lib)]);
                 applyStyle(); save(); sync(); return;
             }
             if (b.dataset.del !== undefined) {
@@ -1554,7 +1626,7 @@
                 else st.papers[st.lay ?? 0] = Number(b.dataset.paper);
             } else if (b.dataset.all !== undefined) {
                 // 自己存的配色方案留着，别的都回到默认
-                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.texts; delete st.papers; delete st.texK;
+                delete st.colors; delete st.images; delete st.cn; delete st.tw; delete st.lay; delete st.texts; delete st.papers; st.layoutTextures = {};
             } else return;
             applyStyle();
             save();

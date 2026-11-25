@@ -5,6 +5,7 @@
     "optional": [],
     "js": "index.js",
     "author": "王北方",
-    "version": "0.28.0",
-    "homePageUrl": ""
+    "version": "0.29.0",
+    "homePageUrl": "",
+    "css": "style.css"
 }
