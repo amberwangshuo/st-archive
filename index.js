@@ -13,7 +13,16 @@
     let hadDrawerOpen = false;
 
     // 主题有没有生效：看主题定义的变量在不在（不能看 --ar-paper：调色时插件自己会在 <html> 上写它）
-    const themeOn = () => getComputedStyle(doc.documentElement).getPropertyValue('--ar-clip').trim() !== '';
+    // 主题开着没有：看酒馆放主题样式的那个 <style> 里有没有档案的变量。v50 以前读整页的计算样式，
+    // 页面上只要有一点没算完的变化，这一读就逼浏览器当场把整页样式重算一遍（每 1.5 秒 50–100 毫秒）
+    // 酒馆换主题时整段重写这个 <style>（里面的文字节点会换一个），所以只认节点：节点没换就不读——
+    // 每次都取全文的话，每 1.5 秒复制一段 20 万字的字符串，攒多了触发内存回收，停顿 50–90 毫秒
+    let themeNode, themeIs = false;
+    const themeOn = () => {
+        const n = doc.getElementById('custom-style')?.firstChild ?? null;
+        if (n !== themeNode) { themeNode = n; themeIs = !!n && n.data.includes('--ar-clip:'); }
+        return themeIs;
+    };
 
     const ctx = () => {
         try { return globalThis.SillyTavern?.getContext?.() ?? null; } catch { return null; }
@@ -63,7 +72,7 @@
                 name = c.name2 ?? c.characters[c.characterId].name ?? '';
             }
             count = Array.isArray(c.chat) ? c.chat.length : 0;
-            doc.documentElement.style.setProperty('--ar-nextno', count ? `"N\u00B0 ${count}"` : '""');
+            setRoot('--ar-nextno', count ? `"N\u00B0 ${count}"` : '""');
             // 书眉第一张小方图：当前角色的头像（群聊就不放，用默认那张）
             const ch = !c.groupId && c.characterId != null ? c.characters?.[c.characterId] : null;
             if (ch?.avatar) doc.documentElement.style.setProperty('--ar-ava', `url("/thumbnail?type=avatar&file=${encodeURIComponent(ch.avatar)}")`);
@@ -161,14 +170,6 @@
         tools.remove();
     }
 
-    // 滚动时浮出滚动条，停下一会儿再藏
-    let scrollTimer = 0;
-    doc.addEventListener('scroll', (e) => {
-        if (e.target?.id !== 'chat' || !body.classList.contains('ar-tab')) return;
-        body.classList.add('ar-scrolling');
-        clearTimeout(scrollTimer);
-        scrollTimer = setTimeout(() => body.classList.remove('ar-scrolling'), 900);
-    }, true);
 
     function unmount() {
         releaseTools();
@@ -177,7 +178,7 @@
         doc.getElementById('ar-under')?.remove();
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
-        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-exq, .ar-fs, .ar-back')) f.remove();
+        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-fs')) f.remove();
         body.classList.remove('ar-immersive');
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
         for (const x of doc.querySelectorAll('#chat > .mes')) { x.style.removeProperty('--ar-foot'); x.style.removeProperty('--ar-kh'); }
@@ -197,41 +198,68 @@
         doc.documentElement.style.removeProperty('--ar-wall');
     }
 
-    // 主题可能随时被换掉，过一会儿看一次
+    // 整页重算（信头、透字、缩进、页码……）：只在酒馆发事件、聊天区换了消息时做，短时间里来好几次只算一次。
+    // v49 以前每 1.5 秒把这些全做一遍，消息多、卡里带大段 HTML 时手机上很卡（她说导入两张卡后点什么都迟钝）
+    let refreshT = 0;
+    function refresh(delay = 60) {
+        clearTimeout(refreshT);
+        refreshT = setTimeout(() => {
+            if (!body.classList.contains('ar-tab')) return;
+            dress();
+            scratch();
+            indents();
+            folio();
+            fsMarks();
+        }, delay);
+    }
+    // 写到 <html> 上的变量：值没变就不写（写一次整页都要重新算样式）
+    const setRoot = (k, v) => { const st = doc.documentElement.style; if (st.getPropertyValue(k) !== v) st.setProperty(k, v); };
+    // 主题可能随时被换掉，过一会儿看一次；这里只放便宜的检查
     function sync() {
         if (themeOn()) {
+            const first = !body.classList.contains('ar-tab');
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            doc.documentElement.dataset.arPv = '21';
+            if (doc.documentElement.dataset.arPv !== '22') doc.documentElement.dataset.arPv = '22';
             mount();
-            body.classList.add('ar-tab');
+            // 已经有就别再 add：classList.add 即使没变也算改了一次 class，挂在 body 上的监听（酒馆和别的扩展的）每次都被叫醒，
+            // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
+            if (first) body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
             loadCss('https://fonts.loli.net/css2?family=Courier+Prime&family=Inter+Tight:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Playfair+Display+SC&display=swap', 'ar-fonts');
             loadCss('https://fontsapi.zeoseven.com/309/main/result.css', 'ar-fonts-cn');
             // 一进来就有面板开着（比如被钉住的世界书），图标要露出来，才点得到它把它关掉
             if (doc.querySelector('#top-settings-holder .drawer-content.openDrawer')) open(true);
             body.classList.toggle('ar-home', home());
+            flags();
             gatherTools();
-            dress();
-            scratch();
-            indents();
-            folio();
-            fsMarks();
             wall();
             topColor();
             cover();
-            letters();
+            if (first) { letters(); refresh(0); }
         } else if (body.classList.contains('ar-tab')) {
             unmount();
         }
     }
 
+    function flags() {
+        const tb = doc.getElementById('extensionTopBar');
+        const tbOn = !!tb && !tb.classList.contains('displayNone');
+        const prof = !!doc.querySelector('#extensionConnectionProfiles.visible');
+        body.classList.toggle('ar-tb1', tbOn && !prof);
+        body.classList.toggle('ar-tb2', tbOn && prof);
+        body.classList.toggle('ar-drawer', !!doc.querySelector('#top-settings-holder .drawer-content.openDrawer'));
+    }
+    // Chat Top Bar 的插头一点，连接配置那一条就出来或收起：马上让纸挪位，不等下一次检查
+    doc.addEventListener('click', (e) => {
+        if (e.target.closest?.('#extensionTopBarToggleConnectionProfiles, #extensionTopBarToggleSidebar')) setTimeout(flags, 60);
+    }, true);
     // 欢迎页出现或离开时马上换（每次回到欢迎页都先看封面）
     const chatEl = doc.getElementById('chat');
     if (chatEl) {
         new MutationObserver(() => {
             if (!body.classList.contains('ar-tab')) return;
             body.classList.toggle('ar-home', home());
-            dress();
+            refresh();
         }).observe(chatEl, { childList: true });
     }
 
@@ -281,15 +309,22 @@
     if (holder) {
         new MutationObserver(() => {
             const any = !!holder.querySelector('.drawer-content.openDrawer');
+            body.classList.toggle('ar-drawer', any);
             if (hadDrawerOpen && !any) setTimeout(() => open(false), 250);
             hadDrawerOpen = any;
         }).observe(holder, { subtree: true, attributes: true, attributeFilter: ['class'] });
     }
 
+    // 壁纸交给 --ar-wall：酒馆换壁纸时 #bg1 的内联样式会变，没变就不去读（读计算样式要整页算一遍）
+    let wallKey = null;
     function wall() {
+        const bg = doc.getElementById('bg1');
+        const key = bg?.getAttribute('style') ?? '';
+        if (key === wallKey) return;
+        wallKey = key;
         const root = doc.documentElement.style;
-        const img = getComputedStyle(doc.getElementById('bg1') ?? body).backgroundImage;
-        if (img && img !== 'none') root.setProperty('--ar-wall', img);
+        const img = getComputedStyle(bg ?? body).backgroundImage;
+        if (img && img !== 'none') setRoot('--ar-wall', img);
         else root.removeProperty('--ar-wall');
     }
 
@@ -299,7 +334,8 @@
     let topKey = '', themeColor0 = null;
     function topColor() {
         const root = doc.documentElement;
-        const m = getComputedStyle(root).backgroundImage.match(/url\(["']?(.*?)["']?\)/);
+        // 壁纸地址从 --ar-wall 里取（wall() 写的，就是 #bg1 的图），不读计算样式
+        const m = (root.style.getPropertyValue('--ar-wall') || '').match(/url\(["']?(.*?)["']?\)/);
         const key = `${m?.[1]?.slice(0, 200) ?? ''}|${m?.[1]?.length ?? 0}|${innerWidth}x${innerHeight}`;
         if (key === topKey) return;
         topKey = key;
@@ -432,11 +468,12 @@
         ['自己上传', '', 'upload'],
         // 后加的排在最后（存的是序号，前面的不能动）；style 卡里按 PAPER_ORDER 排
         // v49（第 48 轮她挑的纸）：书纸换成米白书纸、布纹信纸换成象牙白信笺；新加哑粉纸（拍卖图录用的）、试卷纸（干净、带一丢丢暖黄）。
+        // v50：书纸、试卷纸的图里画了淡淡的反字（透出来的背面），她说不必真是背面那一页
         // 新的三张图是 840 的无缝小图，铺成 580px 宽，颗粒和样张里一样大
         ['书纸', '', '--ar-book', '580px 580px'],
         ['信笺', '', '--ar-linen', '580px 580px'],
         ['哑粉纸', '', '--ar-matte', '580px 580px'],
-        ['试卷纸', '', 'tint:#FBF9F1'],
+        ['试卷纸', '', '--ar-exam', '580px 580px'],
     ];
     const PAPER_ORDER = [8, 6, 7, 9, 0, 1, 2, 3, 4];
     const UPLOAD = 5;
@@ -724,35 +761,7 @@
     // 你的每一条 = 一张答题卡（上面印着前一张试卷的三道题，正文是你的作答，框在答题区域里）。题号按角色的条数往下排
     // 背面透过来的字：刊物和答卷的纸不是完全不透的，背面那一页印的字会淡淡地反着透过来（她说真的书纸、模考卷都这样）。
     // 刊物透的是下一页（下一条消息，没有就是上一条）的正文；答卷透的是背面的题。左右反、糊一点、很淡，不能选中
-    function backs() {
-        const lay = (LAYOUTS[store()?.lay ?? 0] ?? LAYOUTS[0])[1];
-        const on = body.classList.contains('ar-tab') && (lay === 'ar-lay-b' || lay === 'ar-lay-d');
-        const c = ctx();
-        const chat = Array.isArray(c?.chat) ? c.chat : [];
-        const plain = (m) => String(m?.mes ?? '').replace(/```[\s\S]*?```/g, '').replace(/<[^>]+>/g, '').replace(/[*_#>`~]/g, '').trim();
-        for (const el of doc.querySelectorAll('#chat > .mes[mesid]')) {
-            let b = el.querySelector(':scope > .ar-back');
-            if (!on) { b?.remove(); continue; }
-            const id = Number(el.getAttribute('mesid'));
-            let t;
-            if (lay === 'ar-lay-d') {
-                const k = id * 3;
-                t = [...Array(9)].map((_, i) => `${(k + i) % 30 + 4}. ${EXAM_Q[(k + i) % EXAM_Q.length]}`).join('\n') + '\n' + EXAM_NOTES.join('\n');
-            } else {
-                t = plain(chat[id + 1]) || plain(chat[id - 1]);
-            }
-            t = t.slice(0, 1400);
-            if (!b) {
-                b = doc.createElement('div');
-                b.className = 'ar-back';
-                b.setAttribute('aria-hidden', 'true');
-                el.prepend(b);
-            }
-            if (b.textContent !== t) b.textContent = t;
-        }
-    }
     function scratch() {
-        backs();
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
         const c = ctx();
         const chat = Array.isArray(c?.chat) ? c.chat : [];
@@ -764,7 +773,6 @@
         const name = text('exam').trim() || '高三第三次模拟考试';
         for (const el of doc.querySelectorAll('#chat > .mes[mesid]')) {
             let sc = el.querySelector(':scope > .ar-scratch');
-            for (const x of el.querySelectorAll('.mes_block > .ar-exq')) x.remove();
             if (!on) {
                 sc?.remove();
                 el.style.removeProperty('--ar-foot');
@@ -949,7 +957,7 @@
     }
     function editText(key, x, y) {
         const def = TEXTS.find((t) => t[0] === key);
-        const after = () => { applyStyle(); dress(); scratch(); save(); stylePanel.sync?.(); };
+        const after = () => { applyStyle(); refresh(0); save(); stylePanel.sync?.(); };
         editBox({
             label: TEXT_NAME[key], value: text(key), multi: def?.[3], x, y,
             changed: store()?.texts?.[key] !== undefined && store().texts[key] !== def?.[2],
@@ -1096,7 +1104,6 @@
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
         else if (pp[2].startsWith('--')) root.setProperty('--ar-cotton', `var(${pp[2]})`);
-        else if (pp[2].startsWith('tint:')) root.setProperty('--ar-cotton', `linear-gradient(${pp[2].slice(5)}, ${pp[2].slice(5)})`);
         else if (pp[2] === 'upload' && s.paperTex) {
             // 自己上传的纸纹：宽度对齐每张纸（只会缩小、不会放大，所以不糊）；
             // 纸比图长的部分，接这张图上下翻过来的样子，接缝是对称的，看不出断开
@@ -1125,7 +1132,7 @@
         // 有的纸纹要铺得比棉纸细（布纹的织纹）
         if (pp[3]) root.setProperty('--ar-cs', pp[3]);
         wall();
-        dress();
+        refresh(0);
     }
 
     function clearStyle() {
@@ -1295,7 +1302,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.21</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.22</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
@@ -1494,9 +1501,11 @@
     const et = c?.eventTypes ?? c?.event_types ?? {};
     if (es?.on) {
         for (const k of ['CHAT_CHANGED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_DELETED', 'CHARACTER_EDITED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_UPDATED', 'CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MORE_MESSAGES_LOADED']) {
-            if (et[k]) es.on(et[k], () => { sync(); fill(); setTimeout(() => { dress(); scratch(); indents(); folio(); fsMarks(); }, 60); });
+            if (et[k]) es.on(et[k], () => { sync(); fill(); refresh(); });
         }
         if (et.APP_READY) es.on(et.APP_READY, markReady);
+        // 生成结束、换版式之类之后补一次
+        for (const k of ['GENERATION_ENDED', 'GENERATION_STOPPED', 'SETTINGS_UPDATED']) if (et[k]) es.on(et[k], () => refresh(120));
         // 发出去之后、换聊天时把工具格收起来
         for (const k of ['MESSAGE_SENT', 'CHAT_CHANGED']) {
             if (et[k]) es.on(et[k], () => { if (empty()) memo(false); });
