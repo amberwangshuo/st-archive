@@ -177,7 +177,7 @@
         doc.getElementById('ar-under')?.remove();
         doc.getElementById('ar-sides')?.remove();
         doc.getElementById('ar-clip')?.remove();
-        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-exq, .ar-fs')) f.remove();
+        for (const f of doc.querySelectorAll('.ar-folio, .ar-scratch, .ar-exq, .ar-fs, .ar-back')) f.remove();
         body.classList.remove('ar-immersive');
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
         for (const x of doc.querySelectorAll('#chat > .mes')) { x.style.removeProperty('--ar-foot'); x.style.removeProperty('--ar-kh'); }
@@ -201,7 +201,7 @@
     function sync() {
         if (themeOn()) {
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
-            doc.documentElement.dataset.arPv = '20';
+            doc.documentElement.dataset.arPv = '21';
             mount();
             body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
@@ -431,13 +431,17 @@
         ['素白', '', 'none'],
         ['自己上传', '', 'upload'],
         // 后加的排在最后（存的是序号，前面的不能动）；style 卡里按 PAPER_ORDER 排
-        ['书纸', '', '--ar-book'],
-        ['布纹信纸', '', '--ar-linen', '190px 190px'],
+        // v49（第 48 轮她挑的纸）：书纸换成米白书纸、布纹信纸换成象牙白信笺；新加哑粉纸（拍卖图录用的）、试卷纸（干净、带一丢丢暖黄）。
+        // 新的三张图是 840 的无缝小图，铺成 580px 宽，颗粒和样张里一样大
+        ['书纸', '', '--ar-book', '580px 580px'],
+        ['信笺', '', '--ar-linen', '580px 580px'],
+        ['哑粉纸', '', '--ar-matte', '580px 580px'],
+        ['试卷纸', '', 'tint:#FBF9F1'],
     ];
-    const PAPER_ORDER = [0, 6, 7, 1, 2, 3, 4];
+    const PAPER_ORDER = [8, 6, 7, 9, 0, 1, 2, 3, 4];
     const UPLOAD = 5;
     // 每种版式默认配的纸：图录页 棉纸、刊物 书纸、信 布纹信纸、答卷 素白；在哪种版式下选的纸只记给那种版式
-    const PAPER_DEF = [0, 6, 7, 4];
+    const PAPER_DEF = [8, 6, 7, 9];
     const paperOf = (s) => s?.papers?.[s.lay ?? 0] ?? PAPER_DEF[s?.lay ?? 0] ?? 0;
     // 每张纸的版式：名字、body 上的 class
     const LAYOUTS = [
@@ -718,7 +722,37 @@
     ];
     // 角色的每一条 = 一张完整的试卷（卷头、注意事项、大题小题标题、「阅读下面的文字……」，正文是阅读材料）；
     // 你的每一条 = 一张答题卡（上面印着前一张试卷的三道题，正文是你的作答，框在答题区域里）。题号按角色的条数往下排
+    // 背面透过来的字：刊物和答卷的纸不是完全不透的，背面那一页印的字会淡淡地反着透过来（她说真的书纸、模考卷都这样）。
+    // 刊物透的是下一页（下一条消息，没有就是上一条）的正文；答卷透的是背面的题。左右反、糊一点、很淡，不能选中
+    function backs() {
+        const lay = (LAYOUTS[store()?.lay ?? 0] ?? LAYOUTS[0])[1];
+        const on = body.classList.contains('ar-tab') && (lay === 'ar-lay-b' || lay === 'ar-lay-d');
+        const c = ctx();
+        const chat = Array.isArray(c?.chat) ? c.chat : [];
+        const plain = (m) => String(m?.mes ?? '').replace(/```[\s\S]*?```/g, '').replace(/<[^>]+>/g, '').replace(/[*_#>`~]/g, '').trim();
+        for (const el of doc.querySelectorAll('#chat > .mes[mesid]')) {
+            let b = el.querySelector(':scope > .ar-back');
+            if (!on) { b?.remove(); continue; }
+            const id = Number(el.getAttribute('mesid'));
+            let t;
+            if (lay === 'ar-lay-d') {
+                const k = id * 3;
+                t = [...Array(9)].map((_, i) => `${(k + i) % 30 + 4}. ${EXAM_Q[(k + i) % EXAM_Q.length]}`).join('\n') + '\n' + EXAM_NOTES.join('\n');
+            } else {
+                t = plain(chat[id + 1]) || plain(chat[id - 1]);
+            }
+            t = t.slice(0, 1400);
+            if (!b) {
+                b = doc.createElement('div');
+                b.className = 'ar-back';
+                b.setAttribute('aria-hidden', 'true');
+                el.prepend(b);
+            }
+            if (b.textContent !== t) b.textContent = t;
+        }
+    }
     function scratch() {
+        backs();
         const on = body.classList.contains('ar-tab') && body.classList.contains('ar-lay-d');
         const c = ctx();
         const chat = Array.isArray(c?.chat) ? c.chat : [];
@@ -1062,6 +1096,7 @@
         if (pp[1]) root.setProperty('--ar-pat', pp[1]); else root.removeProperty('--ar-pat');
         if (pp[2] === 'none') root.setProperty('--ar-cotton', 'none');
         else if (pp[2].startsWith('--')) root.setProperty('--ar-cotton', `var(${pp[2]})`);
+        else if (pp[2].startsWith('tint:')) root.setProperty('--ar-cotton', `linear-gradient(${pp[2].slice(5)}, ${pp[2].slice(5)})`);
         else if (pp[2] === 'upload' && s.paperTex) {
             // 自己上传的纸纹：宽度对齐每张纸（只会缩小、不会放大，所以不糊）；
             // 纸比图长的部分，接这张图上下翻过来的样子，接缝是对称的，看不出断开
@@ -1260,7 +1295,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.20.1</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.21</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
