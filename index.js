@@ -234,11 +234,100 @@
 
     // 整页重算（信头、透字、缩进、页码……）：只在酒馆发事件、聊天区换了消息时做，短时间里来好几次只算一次。
     // v49 以前每 1.5 秒把这些全做一遍，消息多、卡里带大段 HTML 时手机上很卡（她说导入两张卡后点什么都迟钝）
+    // ── 欢迎页增强（v63 · 方案 A）：
+    //    1. 清洗酒馆最近聊天摘要里的 <style>、HTML 标签、<!-- 音乐/正则注释 -->，只留干净正文；
+    //    2. 若检测到状态栏短信息（如「时间：夜 | 地点：玄关」）或播放器注释（如 title / artist），提炼成一枚极简打字机小签；
+    //    3. 为第 1 条在读卷与分卷卡注入高清原图头像（--ar-wpic）、总条数抬头（--ar-wcount）、同角色多分支区分签（02 · 名字 · II），
+    //       并在副栏右侧补上「API · 角色 · 扩展」三个极简快捷词。 ──
+    const ROMAN = ['', '', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+    function cleanExcerpt(raw) {
+        let s = String(raw ?? '');
+        let tag = '';
+        const songArtist = /<!--[^>]*\bartist\s*:\s*([^>\n-]+?)\s*-->/i.exec(s)?.[1]?.trim();
+        const songTitle = /<!--[^>]*\btitle\s*:\s*([^>\n-]+?)\s*-->/i.exec(s)?.[1]?.trim();
+        if (songArtist || songTitle) tag = `♪ ${songArtist || songTitle}`;
+        s = s
+            .replace(/<!--[\s\S]*?-->/g, ' ')
+            .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ');
+        // 若最前面有一个短小的状态栏块（如 <div class="bar">时间：夜 | 地点：玄关</div>），提炼成短签并从正文里拿掉
+        const barMatch = /^\s*<(?:div|p|header|section|aside)\b[^>]*>([^<]{2,42})<\/(?:div|p|header|section|aside)>/i.exec(s);
+        if (barMatch) {
+            const barTxt = barMatch[1].replace(/(?:时间|地点|场景|天气|日期)\s*[：:]\s*/g, '').replace(/\s*[|｜/·]\s*/g, ' · ').trim();
+            if (!tag && barTxt && barTxt.length <= 24) tag = `[ ${barTxt} ]`;
+            s = s.slice(barMatch[0].length);
+        }
+        s = s.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\[The message is empty\]/gi, '').replace(/\s+/g, ' ').trim();
+        return { text: s || '—', tag };
+    }
+    function welcomeEnhance() {
+        const wp = doc.querySelector('#chat .welcomePanel');
+        if (!wp) return;
+        // 副栏快捷入口：API · 角色 · 扩展
+        const sc = wp.querySelector('.welcomeShortcuts');
+        if (sc && !sc.querySelector('.ar-wlink')) {
+            const links = [
+                ['API', () => doc.querySelector('#api-button > .drawer-toggle')?.click()],
+                ['角色', () => doc.getElementById('rightNavDrawerIcon')?.click()],
+                ['扩展', () => doc.querySelector('#extensions-settings-button > .drawer-toggle')?.click()],
+            ];
+            for (const [label, fn] of links) {
+                const b = doc.createElement('button');
+                b.type = 'button';
+                b.className = 'ar-wlink';
+                b.textContent = label;
+                b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
+                sc.append(b);
+            }
+        }
+        const items = [...wp.querySelectorAll('.recentChatList > .recentChat')];
+        wp.style.setProperty('--ar-wcount', `"CURRENT & FILED · ${String(items.length).padStart(2, '0')}"`);
+        const nameTotal = {};
+        for (const it of items) {
+            const nm = it.querySelector('.characterName')?.textContent?.trim() || '';
+            if (nm) nameTotal[nm] = (nameTotal[nm] || 0) + 1;
+        }
+        const nameSeen = {};
+        items.forEach((it, idx) => {
+            if (it.dataset.arEnhanced === '1') return;
+            it.dataset.arEnhanced = '1';
+            const nm = it.querySelector('.characterName')?.textContent?.trim() || '未命名';
+            nameSeen[nm] = (nameSeen[nm] || 0) + 1;
+            const branch = nameTotal[nm] > 1 && nameSeen[nm] > 1 ? ` · ${ROMAN[nameSeen[nm]] || nameSeen[nm]}` : '';
+            const n2 = String(idx + 1).padStart(2, '0');
+            it.dataset.arTab = `${n2} · ${nm}${branch}`;
+            // 升级高清原图头像
+            const img = it.querySelector('.avatar img');
+            const avBox = it.querySelector('.avatar');
+            if (img && avBox) {
+                const src = img.getAttribute('src');
+                if (src) avBox.style.setProperty('--ar-wpic', `url("${fullPic(src)}")`);
+            }
+            // 清洗乱码摘要 + 注入极简小签
+            const msgEl = it.querySelector('.chatMessage');
+            if (msgEl) {
+                const raw = msgEl.getAttribute('title') || msgEl.textContent || '';
+                const { text: cleanTxt, tag } = cleanExcerpt(raw);
+                msgEl.textContent = cleanTxt;
+                msgEl.setAttribute('title', cleanTxt);
+                if (tag) {
+                    const cnBox = it.querySelector('.chatName');
+                    if (cnBox && !cnBox.querySelector('.ar-wtag')) {
+                        const sp = doc.createElement('span');
+                        sp.className = 'ar-wtag';
+                        sp.textContent = tag;
+                        cnBox.append(sp);
+                    }
+                }
+            }
+        });
+    }
     let refreshT = 0;
     function refresh(delay = 60) {
         clearTimeout(refreshT);
         refreshT = setTimeout(() => {
             if (!body.classList.contains('ar-tab')) return;
+            welcomeEnhance();
             dress();
             scratch();
             indents();
@@ -302,7 +391,9 @@
             loadCss('https://fontsapi.zeoseven.com/309/main/result.css', 'ar-fonts-cn');
             // 一进来就有面板开着（比如被钉住的世界书），图标要露出来，才点得到它把它关掉
             if (doc.querySelector('#top-settings-holder .drawer-content.openDrawer')) open(true);
-            body.classList.toggle('ar-home', home());
+            const isHome = home();
+            body.classList.toggle('ar-home', isHome);
+            if (isHome) welcomeEnhance();
             flags();
             frames();
             gatherTools();
@@ -740,7 +831,9 @@
         keyLine(el, 'title', 'title', t.title.replaceAll('{n}', words(id)).replaceAll('{no}', String(id)), (x) => blk.prepend(x));
         keyLine(el, 'open', user ? 'open2' : 'open1', user ? t.open2 : t.open1, (x) => blk.prepend(x));
         keyLine(el, 'epi', 'epi', t.epi.trim() ? t.epi : '', (x) => mt.before(x));
-        keyLine(el, 'close', user ? 'close2' : 'close1', user ? t.close2 : t.close1, (x) => mt.after(x));
+        keyLine(el, 'close', user ? 'close2' : 'close1', user ? t.close2 : t.close1, (x) => blk.append(x));
+        const clEl = blk.querySelector(':scope > .ar-k[data-k="close"]');
+        if (clEl && blk.lastElementChild !== clEl) blk.append(clEl);
         keyLine(el, 'addr', user ? 'addr2' : 'addr', user ? t.addr2 : t.addr, (x) => nm.after(x));
         keyLine(el, 'dear', 'dear', t.dear.replaceAll('{name}', to), (x) => ch.append(x));
     }
@@ -809,8 +902,7 @@
                 const keep = [...new Set([0, si - 1, si, si + 1, sw - 1])].filter((i) => i >= 0 && i < sw).sort((a, b) => a - b);
                 keep.forEach((i, k) => { if (k && i - keep[k - 1] > 1) list.push(-1); list.push(i); });
             }
-            let h = '<button type="button" class="ar-folio-toggle" aria-label="展开或收起稿件页码" aria-expanded="' +
-                f.classList.contains('show') + '">' + n2(si + 1) + ' / ' + n2(sw) + '</button>';
+            let h = '';
             for (const i of list) {
                 h += i < 0
                     ? '<button type="button" class="gap" data-jump title="全部稿">…</button>'
@@ -820,31 +912,47 @@
             f.innerHTML = h;
         }
     }
-    // 页码平时是藏着的：点到那一条（号码这时点不到）先让它出现，过几秒自己收回去
+    // 页码平时完全隐形：第一下触碰右下角感应区只唤醒浮现（加 260ms 防连点锁，绝不误翻页）；点别处或 3.6 秒无操作自动隐去
     const folioTimers = new WeakMap();
+    const hideFolio = (f) => {
+        clearTimeout(folioTimers.get(f));
+        f.classList.remove('show');
+    };
     const showFolio = (f) => {
+        const wasHidden = !f.classList.contains('show');
         f.classList.add('show');
-        f.querySelector('.ar-folio-toggle')?.setAttribute('aria-expanded', 'true');
+        if (wasHidden) f.dataset.wokeAt = String(Date.now());
         clearTimeout(folioTimers.get(f));
         folioTimers.set(f, setTimeout(() => {
             if (f.contains(doc.activeElement) && doc.activeElement.matches(':focus-visible')) return;
             f.classList.remove('show');
-            f.querySelector('.ar-folio-toggle')?.setAttribute('aria-expanded', 'false');
-        }, 8000));
+        }, 3600));
     };
+    doc.addEventListener('pointerdown', (e) => {
+        for (const f of doc.querySelectorAll('#chat .ar-folio.show')) {
+            if (!f.contains(e.target)) hideFolio(f);
+        }
+    }, true);
     doc.addEventListener('click', (e) => {
         const f = e.target.closest?.('.ar-folio');
-        if (f && !e.target.closest('.ar-folio button')) { e.preventDefault(); e.stopPropagation(); showFolio(f); return; }
-        const b = e.target.closest?.('.ar-folio button');
-        if (!b) return;
-        if (b.classList.contains('ar-folio-toggle')) {
+        if (!f) return;
+        const canHover = matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (!f.classList.contains('show') && !canHover) {
             e.preventDefault();
             e.stopPropagation();
-            if (f.classList.contains('show')) {
-                clearTimeout(folioTimers.get(f));
-                f.classList.remove('show');
-                b.setAttribute('aria-expanded', 'false');
-            } else showFolio(f);
+            showFolio(f);
+            return;
+        }
+        if (!canHover && Date.now() - Number(f.dataset.wokeAt || 0) < 260) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        const b = e.target.closest?.('.ar-folio button');
+        if (!b) {
+            e.preventDefault();
+            e.stopPropagation();
+            showFolio(f);
             return;
         }
         showFolio(f);
@@ -1045,6 +1153,7 @@
         // 因此加载框还在时直接挂进 <dialog> 里，等待期间即可实时点拍立得、翻背面、抽相片；加载框关闭前平滑移回 <html>。
         const splashDlg = doc.querySelector('dialog.popup[open]:has(#loader.splash-screen)');
         if (splashDlg) {
+            el.classList.add('settled');
             splashDlg.append(el);
             const dlgObs = new MutationObserver(() => {
                 if (!splashDlg.open || !splashDlg.isConnected) {
@@ -1076,10 +1185,15 @@
         const mes = t.closest?.('#chat > .mes');
         const user = mes?.getAttribute('is_user') === 'true';
         const r = (el) => el?.getBoundingClientRect();
-        // 封面
+        // 封面与欢迎页右上角微露相片/胶卷
         if (t.closest?.('#ar-cover .ph')) return { img: 'photo' };
         if (t.closest?.('#ar-cover .bk1')) return { img: 'cv1' };
         if (t.closest?.('#ar-cover .bk2')) return { img: 'cv2' };
+        const wp = t.closest?.('#chat .welcomePanel');
+        if (wp && !t.closest('.recentChat, button, a, .menu_button')) {
+            const wr = r(wp);
+            if (wr && y < wr.top + 36 && x > wr.right - 170) return { img: x > wr.right - 85 ? 'cv2' : 'cv1' };
+        }
         // 输入框收着时中间那一句；打开时晕开的那张图
         if (t.closest?.('#send_form') && !t.closest('textarea, button, .menu_button, .fa-solid, #ar-tools')) {
             const open = body.classList.contains('ar-memo') || !empty();
