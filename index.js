@@ -289,6 +289,26 @@
         }
         const nameSeen = {};
         items.forEach((it, idx) => {
+            // 破除云端懒加载插件（如柏宝箱 data-bai-bai-toolkit-lazy-avatar-src）在手机 Safari 上导致的白框空白：
+            // 直接从酒馆模板自带的 data-avatar 或懒加载属性取真实头像地址，强制 eager 立即解码显示
+            const img = it.querySelector('.avatar img');
+            const avBox = it.querySelector('.avatar');
+            if (img && avBox) {
+                const avatarFile = it.getAttribute('data-avatar')?.trim();
+                const lazySrc = img.getAttribute('data-bai-bai-toolkit-lazy-avatar-src') || img.dataset?.src || img.dataset?.lazySrc || '';
+                const curSrc = img.getAttribute('src') || '';
+                const isPlaceholder = !curSrc || curSrc.startsWith('data:image/gif') || curSrc.startsWith('data:image/svg') || curSrc === 'about:blank';
+                const realThumb = lazySrc || (!isPlaceholder ? curSrc : (avatarFile ? `/thumbnail?type=avatar&file=${encodeURIComponent(avatarFile)}` : ''));
+                const realFull = avatarFile ? `/characters/${encodeURIComponent(avatarFile)}` : fullPic(realThumb);
+                if (realThumb && isPlaceholder) {
+                    img.setAttribute('loading', 'eager');
+                    img.setAttribute('decoding', 'sync');
+                    img.src = realThumb;
+                } else if (img.loading === 'lazy') {
+                    img.loading = 'eager';
+                }
+                if (realFull) avBox.style.setProperty('--ar-wpic', `url("${realFull}")`);
+            }
             if (it.dataset.arEnhanced === '1') return;
             it.dataset.arEnhanced = '1';
             const nm = it.querySelector('.characterName')?.textContent?.trim() || '未命名';
@@ -296,13 +316,6 @@
             const branch = nameTotal[nm] > 1 && nameSeen[nm] > 1 ? ` · ${ROMAN[nameSeen[nm]] || nameSeen[nm]}` : '';
             const n2 = String(idx + 1).padStart(2, '0');
             it.dataset.arTab = `${n2} · ${nm}${branch}`;
-            // 升级高清原图头像
-            const img = it.querySelector('.avatar img');
-            const avBox = it.querySelector('.avatar');
-            if (img && avBox) {
-                const src = img.getAttribute('src');
-                if (src) avBox.style.setProperty('--ar-wpic', `url("${fullPic(src)}")`);
-            }
             // 清洗乱码摘要 + 注入极简小签
             const msgEl = it.querySelector('.chatMessage');
             if (msgEl) {
@@ -387,9 +400,12 @@
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
             if (first) body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
-            loadCss('https://fonts.loli.net/css2?family=Courier+Prime&family=Inter+Tight:wght@400;500;600&family=Noto+Serif+SC:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Playfair+Display+SC&display=swap', 'ar-fonts');
+            loadCss('https://fonts.loli.net/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=IM+Fell+DW+Pica:ital@0;1&family=Inter+Tight:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Playfair+Display+SC&family=Special+Elite&display=swap', 'ar-fonts');
+            loadCss('https://fontsapi.zeoseven.com/22/main/result.css', 'ar-fonts-z22');
+            loadCss('https://fontsapi.zeoseven.com/79/main/result.css', 'ar-fonts-z79');
+            loadCss('https://fontsapi.zeoseven.com/256/main/result.css', 'ar-fonts-z256');
+            loadCss('https://fontsapi.zeoseven.com/292/main/result.css', 'ar-fonts-z292');
             loadCss('https://fontsapi.zeoseven.com/309/main/result.css', 'ar-fonts-cn');
-            loadCss('https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css', 'ar-fonts-wk');
             // 一进来就有面板开着（比如被钉住的世界书），图标要露出来，才点得到它把它关掉
             if (doc.querySelector('#top-settings-holder .drawer-content.openDrawer')) open(true);
             const isHome = home();
@@ -638,20 +654,25 @@
         ['浅灰纯黑', ['#F2F2F1', '#111214', '#7C7F84', '#2A2B2E', '#F2F2F1', '#111214', '#C9CBCE']],
         ['炭黑雾蓝', ['#2A2B2D', '#E4E3DF', '#8A8B8E', '#4C5A63', '#E8ECEE', '#9DB4C2', '#141516']],
     ];
-    // 中文字体；第一项「随版式默认」让图录/刊物用现代书宋、信与案卷用京華老宋、答卷用考卷标准宋楷；其余项强制全局统一字体
+    // 中文字体（已精简移除系统字体与思源黑体，精选 6 款免费商用高颜值书刊/文艺衬线与楷体）
     const CN_FONTS = [
         ['随版式默认', '', ''],
-        ['思源宋体', '"Noto Serif SC", "Songti SC", "SimSun", serif', 'https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@300;400&display=swap'],
-        ['思源黑体 细', '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif', 'https://fonts.loli.net/css2?family=Noto+Sans+SC:wght@200;300;400&display=swap'],
-        ['霞鹜文楷', '"LXGW WenKai", "Kaiti SC", "KaiTi", serif', 'https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css'],
-        ['系统字体', 'system-ui, "PingFang SC", "Microsoft YaHei", sans-serif', ''],
-        ['京華老宋体', '"KingHwaOldSong", "Songti SC", "STSong", "SimSun", serif', ''],
+        ['霞鹜新致宋', '"LXGW Neo ZhiSong", "Songti SC", "SimSun", serif', 'https://fontsapi.zeoseven.com/22/main/result.css'],
+        ['汇文明朝体', '"Huiwen-mincho", "Songti SC", "SimSun", serif', 'https://fontsapi.zeoseven.com/256/main/result.css'],
+        ['屏显臻宋', '"Clear Han Serif", "Songti SC", "SimSun", serif', 'https://fontsapi.zeoseven.com/79/main/result.css'],
+        ['霞鹜文楷', '"LXGW WenKai", "Kaiti SC", "KaiTi", serif', 'https://fontsapi.zeoseven.com/292/main/result.css'],
+        ['京華老宋体', '"KingHwaOldSong", "Songti SC", "STSong", "SimSun", serif', 'https://fontsapi.zeoseven.com/309/main/result.css'],
+        ['思源宋体', '"Noto Serif SC", "Songti SC", "SimSun", serif', 'https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap'],
     ];
     const fontKeys = {};
+    // 英文字体（默认换为温润老色带打字机 Special Elite，并加入牛津古典活版字与法式书信衬线体）
     const TW_FONTS = [
-        ['Courier Prime', '"Courier Prime", "KingHwaOldSong", "Courier New", monospace', ''],
-        ['Special Elite', '"Special Elite", "KingHwaOldSong", "Courier New", monospace', 'https://fonts.loli.net/css2?family=Special+Elite&display=swap'],
-        ['IBM Plex Mono', '"IBM Plex Mono", "KingHwaOldSong", "Courier New", monospace', 'https://fonts.loli.net/css2?family=IBM+Plex+Mono:wght@300;400&display=swap'],
+        ['Special Elite · 旧色带', '"Special Elite", "LXGW Neo ZhiSong", Georgia, serif', 'https://fonts.loli.net/css2?family=Special+Elite&display=swap'],
+        ['IM Fell · 古典活版', '"IM Fell DW Pica", "LXGW Neo ZhiSong", Georgia, serif', 'https://fonts.loli.net/css2?family=IM+Fell+DW+Pica:ital@0;1&display=swap'],
+        ['Cormorant · 法式书信', '"Cormorant Garamond", "LXGW Neo ZhiSong", Georgia, serif', 'https://fonts.loli.net/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&display=swap'],
+        ['Cutive Mono · 柔打字机', '"Cutive Mono", "LXGW Neo ZhiSong", monospace', 'https://fonts.loli.net/css2?family=Cutive+Mono&display=swap'],
+        ['EB Garamond · 古典书刊', '"EB Garamond", "LXGW Neo ZhiSong", Georgia, serif', 'https://fonts.loli.net/css2?family=EB+Garamond:ital,wght@0,400;1,400&display=swap'],
+        ['Courier Prime · 等宽', '"Courier Prime", "LXGW Neo ZhiSong", "Courier New", monospace', 'https://fonts.loli.net/css2?family=Courier+Prime&display=swap'],
     ];
     // 纸纹：名字、叠在纸上的一层图案（--ar-pat）、换掉棉纸纹理（--ar-cotton；'none' 是不要纹理）
     // 线的颜色跟着配色里的「字」走（v53：以前写死成深灰，纸调成深色后线就看不见了）
@@ -669,10 +690,10 @@
         // v49（第 48 轮她挑的纸）：书纸换成米白书纸、布纹信纸换成象牙白信笺；新加哑粉纸（拍卖图录用的）、试卷纸（干净、带一丢丢暖黄）。
         // 新的三张图是 840 的无缝小图，铺成 580px 宽，颗粒和样张里一样大
         // v57：书纸、试卷纸是整页的图，图里自带淡淡的透字（背面印的字），按纸的宽度铺、上下重复
-        ['书纸', '', '--ar-book', '100% auto', 'repeat-y'],
+        ['书纸', '', '--ar-book', '420px 420px'],
         ['信笺', '', '--ar-linen', '580px 580px'],
         ['哑粉纸', '', '--ar-matte', '580px 580px'],
-        ['试卷纸', '', '--ar-exam', '100% auto', 'repeat-y'],
+        ['试卷纸', '', '--ar-exam', '420px 420px'],
     ];
     const PAPER_ORDER = [8, 6, 7, 9, 0, 1, 2, 3, 4];
     const UPLOAD = 5;
@@ -755,9 +776,11 @@
             delete s.paperTex;
             delete s.texK;
         }
-        if (!s.cnMig65) {
-            if (s.cn === 5 && s.uf?.cn?.src) s.cn = 6;
-            s.cnMig65 = 1;
+        if (!s.fontMig66) {
+            if (s.uf?.cn?.src && s.cn >= 5) s.cn = CN_FONTS.length;
+            else if (s.cn && s.cn >= CN_FONTS.length) delete s.cn;
+            if (s.uf?.tw?.src && s.tw >= 3) s.tw = TW_FONTS.length;
+            s.fontMig66 = 1;
         }
         return s;
     };
@@ -1396,8 +1419,10 @@
         doc.documentElement.dataset.arFont = customCn ? 'custom' : 'auto';
         if (cnU) root.setProperty('--ar-cn', cnU);
         else if (customCn) { root.setProperty('--ar-cn', cn[1]); loadCss(cn[2], `ar-font-cn-${s.cn}`); } else root.removeProperty('--ar-cn');
+        const customTw = !!(twU || (s.tw && s.tw < TW_FONTS.length));
+        doc.documentElement.dataset.arTw = customTw ? 'custom' : 'auto';
         if (twU) root.setProperty('--ar-tw', twU);
-        else if (s.tw && s.tw < TW_FONTS.length) { root.setProperty('--ar-tw', tw[1]); loadCss(tw[2], `ar-font-tw-${s.tw}`); } else root.removeProperty('--ar-tw');
+        else if (customTw) { root.setProperty('--ar-tw', tw[1]); loadCss(tw[2], `ar-font-tw-${s.tw}`); } else root.removeProperty('--ar-tw');
         // 版式、底图用不用酒馆自己的背景、信头的地址行
         for (const [, cls] of LAYOUTS) if (cls) body.classList.toggle(cls, (LAYOUTS[s.lay ?? 0] ?? LAYOUTS[0])[1] === cls);
         root.setProperty('--ar-idle', q(text('idle')));
@@ -1452,6 +1477,7 @@
         for (const v of ['--ar-cn', '--ar-tw', '--ar-idle', '--ar-epi', '--ar-vh', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-pp', '--ar-cr', '--ar-wall', '--ar-base']) root.removeProperty(v);
         delete doc.documentElement.dataset.arPaper;
         delete doc.documentElement.dataset.arFont;
+        delete doc.documentElement.dataset.arTw;
         for (const [, cls] of LAYOUTS) if (cls) body.classList.remove(cls);
         undress();
     }
@@ -1617,7 +1643,7 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.31</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.32</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
