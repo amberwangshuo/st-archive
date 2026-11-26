@@ -387,8 +387,9 @@
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
             if (first) body.classList.add('ar-tab');
             // 主题里的三种字体由这里加载（主题本身不引外部样式表，导入时酒馆就不会弹确认框）
-            loadCss('https://fonts.loli.net/css2?family=Courier+Prime&family=Inter+Tight:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Playfair+Display+SC&display=swap', 'ar-fonts');
+            loadCss('https://fonts.loli.net/css2?family=Courier+Prime&family=Inter+Tight:wght@400;500;600&family=Noto+Serif+SC:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Playfair+Display+SC&display=swap', 'ar-fonts');
             loadCss('https://fontsapi.zeoseven.com/309/main/result.css', 'ar-fonts-cn');
+            loadCss('https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css', 'ar-fonts-wk');
             // 一进来就有面板开着（比如被钉住的世界书），图标要露出来，才点得到它把它关掉
             if (doc.querySelector('#top-settings-holder .drawer-content.openDrawer')) open(true);
             const isHome = home();
@@ -633,16 +634,18 @@
     const PRESETS = [
         ['冷白灰蓝', ['#FCFCFB', '#1D1D1C', '#8f8d88', '#70899A', '#FFFFFF', '#4E6A7D', '#DADBDC']],
         ['象牙枯玫瑰', ['#F6F1E8', '#2B2420', '#9C8F84', '#B49A93', '#FFFFFF', '#8A5D55', '#DCD5CA']],
+        ['亚麻档案', ['#F6F4EE', '#25221E', '#8A8379', '#9A9388', '#FFFFFF', '#6B6257', '#DDD9D1']],
         ['浅灰纯黑', ['#F2F2F1', '#111214', '#7C7F84', '#2A2B2E', '#F2F2F1', '#111214', '#C9CBCE']],
         ['炭黑雾蓝', ['#2A2B2D', '#E4E3DF', '#8A8B8E', '#4C5A63', '#E8ECEE', '#9DB4C2', '#141516']],
     ];
-    // 中文字体；第一种是主题默认的，css 为空表示不用另外加载
+    // 中文字体；第一项「随版式默认」让图录/刊物用现代书宋、信与案卷用京華老宋、答卷用考卷标准宋楷；其余项强制全局统一字体
     const CN_FONTS = [
-        ['京華老宋体', '"KingHwaOldSong", "Songti SC", "STSong", "SimSun", serif', ''],
+        ['随版式默认', '', ''],
         ['思源宋体', '"Noto Serif SC", "Songti SC", "SimSun", serif', 'https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@300;400&display=swap'],
         ['思源黑体 细', '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif', 'https://fonts.loli.net/css2?family=Noto+Sans+SC:wght@200;300;400&display=swap'],
         ['霞鹜文楷', '"LXGW WenKai", "Kaiti SC", "KaiTi", serif', 'https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css'],
         ['系统字体', 'system-ui, "PingFang SC", "Microsoft YaHei", sans-serif', ''],
+        ['京華老宋体', '"KingHwaOldSong", "Songti SC", "STSong", "SimSun", serif', ''],
     ];
     const fontKeys = {};
     const TW_FONTS = [
@@ -674,7 +677,7 @@
     const PAPER_ORDER = [8, 6, 7, 9, 0, 1, 2, 3, 4];
     const UPLOAD = 5;
     // 每种版式默认配的纸：图录页 棉纸、刊物 书纸、信 布纹信纸、答卷 素白；在哪种版式下选的纸只记给那种版式
-    const PAPER_DEF = [8, 6, 7, 9];
+    const PAPER_DEF = [8, 6, 7, 9, 0];
     const paperOf = (s) => s?.papers?.[s.lay ?? 0] ?? PAPER_DEF[s?.lay ?? 0] ?? 0;
     // 每张纸的版式：名字、body 上的 class
     const LAYOUTS = [
@@ -682,6 +685,7 @@
         ['刊物', 'ar-lay-b'],
         ['信', 'ar-lay-c'],
         ['答卷', 'ar-lay-d'],
+        ['案卷', 'ar-lay-e'],
     ];
     const IMAGES = [
         ['--ar-photo', 'photo', '拍立得', 700],
@@ -750,6 +754,10 @@
             }
             delete s.paperTex;
             delete s.texK;
+        }
+        if (!s.cnMig65) {
+            if (s.cn === 5 && s.uf?.cn?.src) s.cn = 6;
+            s.cnMig65 = 1;
         }
         return s;
     };
@@ -1384,8 +1392,10 @@
         };
         const cnU = s.cn === CN_FONTS.length ? userFont('cn', CN_FONTS[0][1]) : null;
         const twU = s.tw === TW_FONTS.length ? userFont('tw', TW_FONTS[0][1]) : null;
+        const customCn = !!(cnU || (s.cn && s.cn < CN_FONTS.length && cn[1]));
+        doc.documentElement.dataset.arFont = customCn ? 'custom' : 'auto';
         if (cnU) root.setProperty('--ar-cn', cnU);
-        else if (s.cn && s.cn < CN_FONTS.length) { root.setProperty('--ar-cn', cn[1]); loadCss(cn[2], `ar-font-cn-${s.cn}`); } else root.removeProperty('--ar-cn');
+        else if (customCn) { root.setProperty('--ar-cn', cn[1]); loadCss(cn[2], `ar-font-cn-${s.cn}`); } else root.removeProperty('--ar-cn');
         if (twU) root.setProperty('--ar-tw', twU);
         else if (s.tw && s.tw < TW_FONTS.length) { root.setProperty('--ar-tw', tw[1]); loadCss(tw[2], `ar-font-tw-${s.tw}`); } else root.removeProperty('--ar-tw');
         // 版式、底图用不用酒馆自己的背景、信头的地址行
@@ -1441,6 +1451,7 @@
         for (const [v] of IMAGES) root.removeProperty(v);
         for (const v of ['--ar-cn', '--ar-tw', '--ar-idle', '--ar-epi', '--ar-vh', '--ar-nextno', '--ar-pat', '--ar-cotton', '--ar-cs', '--ar-pp', '--ar-cr', '--ar-wall', '--ar-base']) root.removeProperty(v);
         delete doc.documentElement.dataset.arPaper;
+        delete doc.documentElement.dataset.arFont;
         for (const [, cls] of LAYOUTS) if (cls) body.classList.remove(cls);
         undress();
     }
@@ -1606,17 +1617,19 @@
         p = doc.createElement('div');
         p.id = 'ar-style';
         p.innerHTML = `
-            <header><b>style</b><small>插件 0.29</small><i class="ar-x" role="button" title="收起">×</i></header>
+            <header><b>style</b><small>插件 0.31</small><i class="ar-x" role="button" title="收起">×</i></header>
             <section><h4>配色</h4>
                 <div class="ar-presets"></div>
                 <div class="ar-colors">${VARS.map(([v, n]) => `<label><input type="color" data-v="${v}"><span>${n}</span></label>`).join('')}</div>
             </section>
-            <section><h4>纸纹</h4>
-                <div class="ar-papers"></div>
-                <label class="ar-row ar-texk"><span>浓淡</span><input type="range" min="5" max="100" step="5" data-texk></label>
-            </section>
             <section><h4>版式</h4>
                 <div class="ar-lays">${LAYOUTS.map(([n], i) => `<button data-lay="${i}">${n}</button>`).join('')}</div>
+            </section>
+            <section class="ar-fold"><h4 class="ar-fold-hd" role="button" tabindex="0" data-fold="paper">纸纹<span data-paper-cur></span></h4>
+                <div class="ar-fold-body">
+                    <div class="ar-papers"></div>
+                    <label class="ar-row ar-texk"><span>浓淡</span><input type="range" min="5" max="100" step="5" data-texk></label>
+                </div>
             </section>
             <section><h4>字体</h4>
                 ${[['cn', '中文', CN_FONTS], ['tw', '英文', TW_FONTS]].map(([slot, n, list]) => `
@@ -1646,6 +1659,9 @@
         const sync = () => {
             presets();
             lib();
+            const curPaperIdx = paperOf(store());
+            const curPaperLabel = p.querySelector('[data-paper-cur]');
+            if (curPaperLabel) curPaperLabel.textContent = (PAPERS[curPaperIdx] ?? PAPERS[0])[0];
             for (const inp of p.querySelectorAll('input[type=color]')) inp.value = hex(current(inp.dataset.v));
             for (const sel of p.querySelectorAll('select')) sel.value = String(store()?.[sel.dataset.f] ?? 0);
             for (const box of p.querySelectorAll('[data-uf]')) {
@@ -1735,6 +1751,8 @@
             }
         });
         p.addEventListener('click', (e) => {
+            const foldHd = e.target.closest('[data-fold]');
+            if (foldHd) { foldHd.closest('section')?.classList.toggle('open'); return; }
             const st = store();
             const b = e.target.closest('button, .ar-x, .ar-del');
             if (!b || !st) return;
