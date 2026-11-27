@@ -77,12 +77,18 @@
             setRoot('--ar-nextno', count ? `"N\u00B0 ${count}"` : '""');
             // 书眉第一张小方图：当前角色的头像（群聊就不放，用默认那张）
             const ch = !c.groupId && c.characterId != null ? c.characters?.[c.characterId] : null;
-            if (ch?.avatar) doc.documentElement.style.setProperty('--ar-ava', `url("/thumbnail?type=avatar&file=${encodeURIComponent(ch.avatar)}")`);
-            else doc.documentElement.style.removeProperty('--ar-ava');
+            // 值没变就不写：这个函数每 1.5 秒、每条消息都会跑，写一次（哪怕一样）页面就算被改了一次
+            const ava = ch?.avatar ? `url("/thumbnail?type=avatar&file=${encodeURIComponent(ch.avatar)}")` : '';
+            if (doc.documentElement.style.getPropertyValue('--ar-ava') !== ava) {
+                if (ava) doc.documentElement.style.setProperty('--ar-ava', ava);
+                else doc.documentElement.style.removeProperty('--ar-ava');
+            }
         }
         if (tabs) {
             const no = count ? String(count).padStart(4, '0') : '';
-            tabs.querySelector('.t1 span').textContent = [name, no].filter(Boolean).join(' · ');
+            const sp = tabs.querySelector('.t1 span');
+            const s = [name, no].filter(Boolean).join(' · ');
+            if (sp && sp.textContent !== s) sp.textContent = s;
         }
     }
 
@@ -214,6 +220,7 @@
         for (const x of doc.querySelectorAll('#chat p[data-ar-ind]')) x.removeAttribute('data-ar-ind');
         for (const x of doc.querySelectorAll('#chat > .mes')) { x.style.removeProperty('--ar-foot'); x.style.removeProperty('--ar-kh'); }
         doc.getElementById('ar-cover')?.remove();
+        doc.documentElement.classList.remove('ar-cv', 'ar-cvr');
         delete doc.documentElement.dataset.arPv;
         delete doc.documentElement.dataset.arRev;
         doc.documentElement.style.removeProperty('--ar-vh');
@@ -394,7 +401,7 @@
             const first = !body.classList.contains('ar-tab');
             // 记号：主题靠它知道插件是不是这一版（不是的话签下面会出一张提醒更新的小条）
             if (doc.documentElement.dataset.arPv !== '28') doc.documentElement.dataset.arPv = '28';
-            if (doc.documentElement.dataset.arRev !== '29') doc.documentElement.dataset.arRev = '29';
+            if (doc.documentElement.dataset.arRev !== '30') doc.documentElement.dataset.arRev = '30';
             mount();
             // 已经有就别再 add：classList.add 即使没变也算改了一次 class，挂在 body 上的监听（酒馆和别的扩展的）每次都被叫醒，
             // v49 及以前这样每 1.5 秒白白花 60–90 毫秒
@@ -1138,16 +1145,26 @@
         const t0 = Date.now();
         let played = false;
         const inHand = () => el.querySelector('.ph.zoom, .bk.pull') || doc.getElementById('ar-edit');
+        // 封面在不在、挂在哪，记成 <html> 上的两个 class 给主题用：ar-cv = 封面在、还没打开（主题把后面的界面藏着），
+        // ar-cvr = 封面已经挂到 <html> 下（主题把加载框藏掉）。主题原来用 html:has(#ar-cover…) 自己查，
+        // 那样 <html> 从此被浏览器记成「页面上任何地方一有增减都回头查它、再把整页样式重算」，流式输出每来一段字就是一次
+        const root = doc.documentElement;
+        const flag = () => {
+            root.classList.toggle('ar-cv', el.isConnected && !el.classList.contains('open'));
+            root.classList.toggle('ar-cvr', el.isConnected && el.parentElement === root);
+        };
         const reparentToRoot = () => {
             if (el.isConnected && el.parentElement !== doc.documentElement) {
                 doc.documentElement.append(el);
             }
+            flag();
         };
         const openCover = () => {
             if (el.classList.contains('open')) return;
             reparentToRoot();
             el.classList.add('open');
-            setTimeout(() => el.remove(), 900);
+            flag();
+            setTimeout(() => { el.remove(); flag(); }, 900);
         };
         const tryOpen = () => {
             if (!el.isConnected || !appReady || inHand()) return;
@@ -1196,6 +1213,7 @@
         } else {
             doc.documentElement.append(el);
         }
+        flag();
         cover.reparent = reparentToRoot;
         cover.tryOpen = tryOpen;
         requestAnimationFrame(() => el.classList.add('ready'));
